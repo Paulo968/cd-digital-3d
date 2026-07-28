@@ -4,6 +4,11 @@ import { buildPalletTransferSimulation } from '../domain/palletTransferSimulatio
 import { buildRoutePlan, type RoutePlan } from '../domain/routePlanning'
 import type { WarehouseLocation } from '../domain/warehouse'
 import type { ActionResult } from '../store/digitalTwinStore'
+import {
+  describeOperationalVehicleAnchor,
+  resolveOperationalVehiclePoint,
+  useOperationalVehicleStore,
+} from '../store/operationalVehicleStore'
 import { usePalletTransferSimulationStore } from '../store/palletTransferSimulationStore'
 import './pallet-transfer.css'
 
@@ -37,6 +42,15 @@ export function SimulationPanel({
   const [mode, setMode] = useState<'routes' | 'transfer'>('routes')
   const [manualAddress, setManualAddress] = useState('')
   const [feedback, setFeedback] = useState('')
+
+  const vehicleId = useOperationalVehicleStore((state) => state.vehicleId)
+  const vehicleAnchor = useOperationalVehicleStore((state) => state.anchor)
+  const vehiclePoint = useMemo(
+    () => resolveOperationalVehiclePoint(layout, locations, vehicleAnchor),
+    [layout, locations, vehicleAnchor],
+  )
+  const vehicleLabel = describeOperationalVehicleAnchor(vehicleAnchor, locations)
+
   const occupiedLocations = useMemo(
     () =>
       locations
@@ -116,13 +130,14 @@ export function SimulationPanel({
         locations,
         modeToCalculate,
         blocked,
+        vehiclePoint,
       )
       clearTransfer()
       onPlan(plan)
       setFeedback(
         modeToCalculate === 'optimized'
-          ? 'Sequência heurística calculada.'
-          : 'Rota de referência calculada.',
+          ? `Sequência heurística calculada a partir de ${vehicleLabel}.`
+          : `Rota de referência calculada a partir de ${vehicleLabel}.`,
       )
     } catch (error) {
       setFeedback(
@@ -149,6 +164,7 @@ export function SimulationPanel({
         source,
         destination,
         blocked,
+        vehiclePoint,
       )
       const result = startTransfer(simulation)
       setFeedback(result.message)
@@ -184,6 +200,18 @@ export function SimulationPanel({
         </div>
       </div>
 
+      <article className="vehicle-position-card">
+        <div>
+          <span className="eyebrow">Empilhadeira operacional</span>
+          <strong>{vehicleId}</strong>
+        </div>
+        <div>
+          <span>Posição atual</span>
+          <strong>{vehicleLabel}</strong>
+          <small>A próxima missão parte exatamente deste ponto.</small>
+        </div>
+      </article>
+
       <div className="simulation-tabs" role="tablist" aria-label="Tipo de simulação">
         <button
           type="button"
@@ -210,8 +238,8 @@ export function SimulationPanel({
           <p className="muted">
             Compare a ordem informada com uma sequência heurística de menor
             deslocamento. Ela melhora o cenário calculado, mas não garante o
-            ótimo global. Os números representam distância geométrica, não tempo
-            real medido.
+            ótimo global. A rota começa na posição atual da {vehicleId} e retorna
+            ao mesmo ponto ao final deste laboratório.
           </p>
           <div className="task-add">
             <input
@@ -327,8 +355,10 @@ export function SimulationPanel({
       ) : (
         <>
           <p className="muted">
-            Simule uma unidade logística por vez. A empilhadeira sai vazia,
-            coleta o pallet completo na origem e o deposita em um endereço vazio.
+            Simule uma unidade logística por vez. A {vehicleId} parte de{' '}
+            <strong>{vehicleLabel}</strong>, coleta o pallet completo na origem e
+            o deposita em um endereço vazio. Ao aplicar, o destino vira sua nova
+            posição inicial.
           </p>
 
           {selectedLocation && (
@@ -383,7 +413,8 @@ export function SimulationPanel({
             {sourceLocation && (
               <div className="transfer-source-preview">
                 <strong>
-                  {sourceLocation.handlingUnitCode ?? 'Unidade logística sem etiqueta'}
+                  {sourceLocation.handlingUnitCode ??
+                    'Unidade logística sem etiqueta'}
                 </strong>
                 <span>{sourceLocation.description ?? sourceLocation.sku}</span>
                 <small>
@@ -470,7 +501,7 @@ export function SimulationPanel({
               </div>
               <div className="transfer-metrics">
                 <div>
-                  <span>Até a origem</span>
+                  <span>Do estacionamento à origem</span>
                   <strong>{transfer.emptyDistance.toLocaleString('pt-BR')} m</strong>
                 </div>
                 <div>
@@ -495,7 +526,7 @@ export function SimulationPanel({
                   className="secondary wide"
                   onClick={applyCompletedTransfer}
                 >
-                  Aplicar ao cenário sistêmico
+                  Aplicar movimentação e estacionar no destino
                 </button>
               )}
               <button
@@ -504,7 +535,9 @@ export function SimulationPanel({
                 disabled={transferStatus === 'running'}
                 onClick={() => {
                   clearTransfer()
-                  setFeedback('Simulação visual descartada sem alterar o estoque.')
+                  setFeedback(
+                    'Simulação descartada. Estoque e posição operacional da empilhadeira foram preservados.',
+                  )
                 }}
               >
                 Descartar simulação
@@ -515,9 +548,10 @@ export function SimulationPanel({
           <div className="truth-box">
             <strong>Separação entre simular e executar</strong>
             <p>
-              A animação não confirma uma movimentação física. O botão de aplicar
-              altera somente o cenário sistêmico e registra o evento como não
-              confirmado fisicamente.
+              Durante a animação, nada é confirmado fisicamente. Ao aplicar, a
+              origem fica vazia, o destino recebe o pallet e a posição operacional
+              da {vehicleId} passa a ser o endereço de destino. O evento continua
+              marcado como informação sistêmica, sem confirmação física.
             </p>
           </div>
         </>
