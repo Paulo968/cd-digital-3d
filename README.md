@@ -82,6 +82,10 @@ Onde:
 
 O arquivo `public/sample-inventory.csv` pode ser usado para testar a importação.
 
+## Publicação
+
+O projeto usa GitHub Actions para gerar a versão de produção e publicar no GitHub Pages a cada novo envio para a branch `main`.
+
 ## Roadmap resumido
 
 ### Marco 1 — Visualizador 3D
