@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react'
 import QRCode from 'qrcode'
 import type { TraceEvent } from '../domain/traceability'
 import type { WarehouseLocation } from '../domain/warehouse'
+import './traceability.css'
 
 const EVENT_LABEL:Record<TraceEvent['type'],string>={receipt:'Recebimento',putaway:'Armazenagem',transfer:'Transferência',replenishment:'Reabastecimento',picking:'Picking',dispatch:'Expedição',count:'Contagem',adjustment:'Ajuste',block:'Bloqueio',unblock:'Desbloqueio'}
 function eventMatches(event:TraceEvent,location:WarehouseLocation):boolean{return Boolean((location.handlingUnitCode&&event.handlingUnitCode===location.handlingUnitCode)||(location.sku&&event.stock.sku===location.sku&&event.stock.lot===location.lot)||event.fromAddress===location.address||event.toAddress===location.address)}
