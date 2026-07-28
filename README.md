@@ -7,7 +7,9 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 ## Entrega atual
 
 - motor 3D otimizado com `InstancedMesh` para estruturas, posições, pallets e cargas;
-- modos visual operacional e realista;
+- modo operacional focado em leitura, consulta e análise;
+- modo realista com galpão, docas, pátio, caminhões e ciclo visual de recebimento, reabastecimento e expedição;
+- qualidade adaptativa para reduzir sombras, resolução e detalhes em celulares e dispositivos com ponteiro grosseiro;
 - construtor guiado de layouts regulares;
 - proteção de estoque em alterações compatíveis de layout;
 - importação CSV validada contra o layout ativo;
@@ -17,6 +19,7 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 - movimentação interna com origem, destino, operador, documento e confirmação física;
 - contagem física separada do saldo meramente sistêmico;
 - lista de tarefas, bloqueio de cabeceiras, rota de referência, sequência heurística e animação da empilhadeira;
+- simulação visual de coleta, transporte e deposição de um pallet entre endereços;
 - persistência local no navegador para continuar testes.
 
 ## Regra de confiança
@@ -25,9 +28,13 @@ O 3D representa os dados carregados. Importação de ERP/WMS é tratada como inf
 
 A sequência heurística busca reduzir a distância em relação à ordem informada, mas não garante o ótimo global. Distâncias calculadas não representam tempo, produtividade ou economia financeira comprovados.
 
+O ciclo automático do modo realista é exclusivamente demonstrativo: não altera estoque, não gera evento e não representa comando de equipamento físico.
+
 ## Auditoria
 
 O parecer técnico e comercial, os limites conhecidos, as correções de confiança e os bloqueios antes de uso produtivo estão documentados em [`docs/auditoria-tecnica-negocio-v0.4.md`](docs/auditoria-tecnica-negocio-v0.4.md).
+
+A arquitetura, os elementos, os limites e a estratégia responsiva do ambiente vivo estão registrados em [`docs/modo-realista-animado.md`](docs/modo-realista-animado.md).
 
 ## Executar
 
