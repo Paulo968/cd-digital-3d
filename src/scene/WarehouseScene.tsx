@@ -51,13 +51,14 @@ function productColor(location: WarehouseLocation): THREE.Color {
 }
 
 function configureInstance(
-  mesh: THREE.InstancedMesh,
+  mesh: THREE.InstancedMesh | null,
   index: number,
   position: THREE.Vector3,
   rotationY: number,
   scale: [number, number, number],
   color?: THREE.Color,
 ): void {
+  if (!mesh) return
   const dummy = new THREE.Object3D()
   dummy.position.copy(position)
   dummy.rotation.y = rotationY
@@ -201,7 +202,7 @@ function SlotInstances({
         const point = getLocationWorldPoint(layout, location)
         const position = new THREE.Vector3(point.x, point.y - 0.52, point.z)
         configureInstance(
-          slotRef.current!,
+          slotRef.current,
           index,
           position,
           row.rotationY,
@@ -227,7 +228,7 @@ function SlotInstances({
         const pallet = base.clone()
         pallet.y -= 0.42
         configureInstance(
-          palletRef.current!,
+          palletRef.current,
           index,
           pallet,
           row.rotationY,
@@ -237,7 +238,7 @@ function SlotInstances({
         load.y =
           -0.29 + loadHeight / 2 + (location.level - 0.5) * row.levelHeight + 0.25
         configureInstance(
-          loadRef.current!,
+          loadRef.current,
           index,
           load,
           row.rotationY,
