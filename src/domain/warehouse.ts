@@ -1,8 +1,16 @@
+import {
+  DEFAULT_WAREHOUSE_LAYOUT,
+  type RackRowLayout,
+  type WarehouseLayout,
+} from './layout'
+
+const activeDefaultRows = DEFAULT_WAREHOUSE_LAYOUT.rackRows.filter((row) => row.active)
+
 export const WAREHOUSE_CONFIG = {
-  aisles: ['A', 'B', 'C', 'D', 'E', 'F', 'G'],
-  baysPerSide: 8,
-  levels: 7,
-  pickingLevel: 1,
+  aisles: activeDefaultRows.map((row) => row.aisle),
+  baysPerSide: Math.max(...activeDefaultRows.map((row) => row.baysPerSide)),
+  levels: Math.max(...activeDefaultRows.map((row) => row.levels)),
+  pickingLevel: activeDefaultRows[0]?.pickingLevels[0] ?? 1,
 } as const
 
 export type SlotStatus =
@@ -21,6 +29,9 @@ export type StorageZone = 'picking' | 'reserve'
 
 export interface WarehouseLocation {
   address: string
+  layoutId: string
+  layoutVersion: number
+  rackRowId: string
   aisle: string
   bay: number
   position: number
@@ -32,6 +43,8 @@ export interface WarehouseLocation {
   sku?: string
   description?: string
   lot?: string
+  handlingUnitCode?: string
+  expirationDate?: string
   quantity: number
   capacity: number
   lastCheckedAt?: string
@@ -71,23 +84,32 @@ function hashText(value: string): number {
   return Math.abs(hash)
 }
 
-function buildAddress(aisle: string, position: number, level: number): string {
-  return `${aisle}-${String(position).padStart(2, '0')}-${String(level).padStart(2, '0')}`
+export function buildAddress(
+  aisle: string,
+  position: number,
+  level: number,
+): string {
+  return `${aisle.toUpperCase()}-${String(position).padStart(2, '0')}-${String(level).padStart(2, '0')}`
 }
 
 function buildBaseLocation(
-  aisle: string,
+  layout: WarehouseLayout,
+  rackRow: RackRowLayout,
   bay: number,
   side: SlotSide,
   level: number,
 ): WarehouseLocation {
   const position = side === 'left' ? bay * 2 - 1 : bay * 2
-  const zone: StorageZone =
-    level === WAREHOUSE_CONFIG.pickingLevel ? 'picking' : 'reserve'
+  const zone: StorageZone = rackRow.pickingLevels.includes(level)
+    ? 'picking'
+    : 'reserve'
 
   return {
-    address: buildAddress(aisle, position, level),
-    aisle,
+    address: buildAddress(rackRow.aisle, position, level),
+    layoutId: layout.id,
+    layoutVersion: layout.version,
+    rackRowId: rackRow.id,
+    aisle: rackRow.aisle,
     bay,
     position,
     side,
@@ -130,6 +152,12 @@ function buildDemoLocation(base: WarehouseLocation): WarehouseLocation {
     sku: quantity > 0 ? product[0] : undefined,
     description: quantity > 0 ? product[1] : undefined,
     lot: quantity > 0 ? `L${String((hash % 9000) + 1000)}` : undefined,
+    handlingUnitCode:
+      quantity > 0 && base.zone === 'reserve'
+        ? `PLT-${String(hash % 100000).padStart(5, '0')}`
+        : undefined,
+    expirationDate:
+      quantity > 0 ? `2027-${String((hash % 12) + 1).padStart(2, '0')}-15` : undefined,
     quantity,
     lastCheckedAt:
       confirmation === 'physically-confirmed'
@@ -138,23 +166,29 @@ function buildDemoLocation(base: WarehouseLocation): WarehouseLocation {
   }
 }
 
-export function generateWarehouseSkeleton(): WarehouseLocation[] {
-  return WAREHOUSE_CONFIG.aisles.flatMap((aisle) =>
-    Array.from(
-      { length: WAREHOUSE_CONFIG.baysPerSide },
-      (_, bayIndex) => bayIndex + 1,
-    ).flatMap((bay) =>
-      (['left', 'right'] as const).flatMap((side) =>
-        Array.from({ length: WAREHOUSE_CONFIG.levels }, (_, levelIndex) =>
-          buildBaseLocation(aisle, bay, side, levelIndex + 1),
+export function generateWarehouseSkeleton(
+  layout: WarehouseLayout = DEFAULT_WAREHOUSE_LAYOUT,
+): WarehouseLocation[] {
+  return layout.rackRows
+    .filter((rackRow) => rackRow.active)
+    .flatMap((rackRow) =>
+      Array.from(
+        { length: rackRow.baysPerSide },
+        (_, bayIndex) => bayIndex + 1,
+      ).flatMap((bay) =>
+        (['left', 'right'] as const).flatMap((side) =>
+          Array.from({ length: rackRow.levels }, (_, levelIndex) =>
+            buildBaseLocation(layout, rackRow, bay, side, levelIndex + 1),
+          ),
         ),
       ),
-    ),
-  )
+    )
 }
 
-export function generateDemoWarehouse(): WarehouseLocation[] {
-  return generateWarehouseSkeleton().map(buildDemoLocation)
+export function generateDemoWarehouse(
+  layout: WarehouseLayout = DEFAULT_WAREHOUSE_LAYOUT,
+): WarehouseLocation[] {
+  return generateWarehouseSkeleton(layout).map(buildDemoLocation)
 }
 
 export function summarizeWarehouse(locations: WarehouseLocation[]): WarehouseSummary {
