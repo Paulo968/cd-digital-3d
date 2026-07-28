@@ -211,6 +211,7 @@ export function buildRoutePlan(
   allLocations: WarehouseLocation[],
   mode: 'reference' | 'optimized',
   blocked: { left: boolean; right: boolean },
+  vehicleStart: WorldPoint = getZoneWorldPoint(layout, 'shipping'),
 ): RoutePlan {
   const taskLocations = taskAddresses
     .map((address) =>
@@ -222,15 +223,14 @@ export function buildRoutePlan(
     throw new Error('Adicione ao menos uma posição para executar a simulação.')
   }
 
-  const start = getZoneWorldPoint(layout, 'shipping')
-  const reference = routeForOrder(layout, start, taskLocations, blocked)
+  const reference = routeForOrder(layout, vehicleStart, taskLocations, blocked)
   const ordered =
     mode === 'optimized'
-      ? optimizeTaskOrder(layout, start, taskLocations, blocked)
+      ? optimizeTaskOrder(layout, vehicleStart, taskLocations, blocked)
       : taskLocations
   const chosen =
     mode === 'optimized'
-      ? routeForOrder(layout, start, ordered, blocked)
+      ? routeForOrder(layout, vehicleStart, ordered, blocked)
       : reference
   const savedDistance = Math.max(0, reference.distance - chosen.distance)
 
