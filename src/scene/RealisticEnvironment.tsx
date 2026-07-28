@@ -365,7 +365,7 @@ function WarehouseShell({
       </mesh>
 
       {Array.from({ length: beamCount }, (_, index) => {
-        const ratio = beamCount === 1 ? 0.5 : index / (beamCount - 1)
+        const ratio = index / (beamCount - 1)
         const z = THREE.MathUtils.lerp(minZ + 1.5, maxZ - 1.5, ratio)
         return (
           <mesh key={`roof-beam-${index}`} position={[centerX, wallHeight - 0.55, z]}>
@@ -376,7 +376,7 @@ function WarehouseShell({
       })}
 
       {Array.from({ length: lightCount }, (_, index) => {
-        const ratio = lightCount === 1 ? 0.5 : index / (lightCount - 1)
+        const ratio = index / (lightCount - 1)
         const z = THREE.MathUtils.lerp(minZ + 4, maxZ - 5, ratio)
         return (
           <group key={`light-${index}`} position={[centerX, wallHeight - 0.85, z]}>
