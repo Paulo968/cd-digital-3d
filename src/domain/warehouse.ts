@@ -75,16 +75,33 @@ function buildAddress(aisle: string, position: number, level: number): string {
   return `${aisle}-${String(position).padStart(2, '0')}-${String(level).padStart(2, '0')}`
 }
 
-function buildDemoLocation(
+function buildBaseLocation(
   aisle: string,
   bay: number,
   side: SlotSide,
   level: number,
 ): WarehouseLocation {
   const position = side === 'left' ? bay * 2 - 1 : bay * 2
-  const address = buildAddress(aisle, position, level)
-  const hash = hashText(address)
-  const zone: StorageZone = level === WAREHOUSE_CONFIG.pickingLevel ? 'picking' : 'reserve'
+  const zone: StorageZone =
+    level === WAREHOUSE_CONFIG.pickingLevel ? 'picking' : 'reserve'
+
+  return {
+    address: buildAddress(aisle, position, level),
+    aisle,
+    bay,
+    position,
+    side,
+    level,
+    zone,
+    status: 'empty',
+    confirmation: 'system-only',
+    quantity: 0,
+    capacity: zone === 'picking' ? 120 : 1,
+  }
+}
+
+function buildDemoLocation(base: WarehouseLocation): WarehouseLocation {
+  const hash = hashText(base.address)
 
   let status: SlotStatus = 'occupied'
   if (hash % 37 === 0) status = 'blocked'
@@ -99,29 +116,21 @@ function buildDemoLocation(
         : 'physically-confirmed'
 
   const product = PRODUCTS[hash % PRODUCTS.length]
-  const capacity = zone === 'picking' ? 120 : 1
   const quantity =
     status === 'occupied' || status === 'divergent'
-      ? zone === 'picking'
+      ? base.zone === 'picking'
         ? 24 + (hash % 96)
         : 1
       : 0
 
   return {
-    address,
-    aisle,
-    bay,
-    position,
-    side,
-    level,
-    zone,
+    ...base,
     status,
     confirmation,
     sku: quantity > 0 ? product[0] : undefined,
     description: quantity > 0 ? product[1] : undefined,
     lot: quantity > 0 ? `L${String((hash % 9000) + 1000)}` : undefined,
     quantity,
-    capacity,
     lastCheckedAt:
       confirmation === 'physically-confirmed'
         ? '2026-07-27T18:30:00-03:00'
@@ -129,18 +138,22 @@ function buildDemoLocation(
   }
 }
 
-export function generateDemoWarehouse(): WarehouseLocation[] {
+export function generateWarehouseSkeleton(): WarehouseLocation[] {
   return WAREHOUSE_CONFIG.aisles.flatMap((aisle) =>
     Array.from({ length: WAREHOUSE_CONFIG.baysPerSide }, (_, bayIndex) => {
       const bay = bayIndex + 1
 
       return (['left', 'right'] as const).flatMap((side) =>
         Array.from({ length: WAREHOUSE_CONFIG.levels }, (_, levelIndex) =>
-          buildDemoLocation(aisle, bay, side, levelIndex + 1),
+          buildBaseLocation(aisle, bay, side, levelIndex + 1),
         ),
       )
     }),
   )
+}
+
+export function generateDemoWarehouse(): WarehouseLocation[] {
+  return generateWarehouseSkeleton().map(buildDemoLocation)
 }
 
 export function summarizeWarehouse(locations: WarehouseLocation[]): WarehouseSummary {
@@ -166,7 +179,12 @@ export function summarizeWarehouse(locations: WarehouseLocation[]): WarehouseSum
     occupancyRate:
       summary.total === 0
         ? 0
-        : Number(((summary.occupied + summary.divergent) / summary.total * 100).toFixed(1)),
+        : Number(
+            (
+              ((summary.occupied + summary.divergent) / summary.total) *
+              100
+            ).toFixed(1),
+          ),
   }
 }
 
