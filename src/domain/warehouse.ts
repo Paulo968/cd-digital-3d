@@ -140,15 +140,16 @@ function buildDemoLocation(base: WarehouseLocation): WarehouseLocation {
 
 export function generateWarehouseSkeleton(): WarehouseLocation[] {
   return WAREHOUSE_CONFIG.aisles.flatMap((aisle) =>
-    Array.from({ length: WAREHOUSE_CONFIG.baysPerSide }, (_, bayIndex) => {
-      const bay = bayIndex + 1
-
-      return (['left', 'right'] as const).flatMap((side) =>
+    Array.from(
+      { length: WAREHOUSE_CONFIG.baysPerSide },
+      (_, bayIndex) => bayIndex + 1,
+    ).flatMap((bay) =>
+      (['left', 'right'] as const).flatMap((side) =>
         Array.from({ length: WAREHOUSE_CONFIG.levels }, (_, levelIndex) =>
           buildBaseLocation(aisle, bay, side, levelIndex + 1),
         ),
-      )
-    }),
+      ),
+    ),
   )
 }
 
