@@ -1,7 +1,14 @@
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { OrbitControls, Text } from '@react-three/drei'
-import { useMemo, useRef, useState, type ElementRef } from 'react'
+import {
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ElementRef,
+} from 'react'
 import * as THREE from 'three'
+import { importInventoryCsv } from './domain/importInventoryCsv'
 import {
   CONFIRMATION_LABEL,
   SLOT_STATUS_LABEL,
@@ -44,9 +51,7 @@ function getAisleCenterZ(aisle: string): number {
 
 function getSlotPosition(location: WarehouseLocation): THREE.Vector3 {
   const rackLength = WAREHOUSE_CONFIG.baysPerSide * BAY_WIDTH
-  const x =
-    (location.bay - 0.5) * BAY_WIDTH -
-    rackLength / 2
+  const x = (location.bay - 0.5) * BAY_WIDTH - rackLength / 2
   const sideDirection = location.side === 'left' ? -1 : 1
   const z =
     getAisleCenterZ(location.aisle) +
@@ -54,6 +59,18 @@ function getSlotPosition(location: WarehouseLocation): THREE.Vector3 {
   const y = (location.level - 0.5) * LEVEL_HEIGHT + 0.25
 
   return new THREE.Vector3(x, y, z)
+}
+
+function formatDateTime(value?: string): string {
+  if (!value) return 'Não confirmada'
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    dateStyle: 'short',
+    timeStyle: 'short',
+  }).format(date)
 }
 
 function RackStructure({ aisle, side }: { aisle: string; side: SlotSide }) {
@@ -71,7 +88,11 @@ function RackStructure({ aisle, side }: { aisle: string; side: SlotSide }) {
         return (
           <mesh key={`post-${index}`} position={[x, RACK_HEIGHT / 2, 0]}>
             <boxGeometry args={[0.12, RACK_HEIGHT, 0.12]} />
-            <meshStandardMaterial color="#334155" metalness={0.55} roughness={0.45} />
+            <meshStandardMaterial
+              color="#334155"
+              metalness={0.55}
+              roughness={0.45}
+            />
           </mesh>
         )
       })}
@@ -83,11 +104,19 @@ function RackStructure({ aisle, side }: { aisle: string; side: SlotSide }) {
           <group key={`beam-${index}`} position={[0, y, 0]}>
             <mesh position={[0, 0, -RACK_DEPTH / 2]}>
               <boxGeometry args={[rackLength, 0.1, 0.1]} />
-              <meshStandardMaterial color="#f97316" metalness={0.4} roughness={0.5} />
+              <meshStandardMaterial
+                color="#f97316"
+                metalness={0.4}
+                roughness={0.5}
+              />
             </mesh>
             <mesh position={[0, 0, RACK_DEPTH / 2]}>
               <boxGeometry args={[rackLength, 0.1, 0.1]} />
-              <meshStandardMaterial color="#f97316" metalness={0.4} roughness={0.5} />
+              <meshStandardMaterial
+                color="#f97316"
+                metalness={0.4}
+                roughness={0.5}
+              />
             </mesh>
           </group>
         )
@@ -106,7 +135,8 @@ function PalletSlot({
   const selectAddress = useWarehouseStore((state) => state.selectAddress)
   const position = getSlotPosition(location)
   const color = STATUS_COLOR[location.status]
-  const isOccupied = location.status === 'occupied' || location.status === 'divergent'
+  const isOccupied =
+    location.status === 'occupied' || location.status === 'divergent'
   const loadHeight = location.zone === 'picking' ? 0.55 : 0.9
 
   return (
@@ -137,11 +167,19 @@ function PalletSlot({
       {isOccupied && (
         <>
           <mesh position={[0, -0.4, 0]} castShadow>
-            <boxGeometry args={[BAY_WIDTH * 0.72, 0.12, RACK_DEPTH * 0.72]} />
+            <boxGeometry
+              args={[BAY_WIDTH * 0.72, 0.12, RACK_DEPTH * 0.72]}
+            />
             <meshStandardMaterial color="#9a6a3a" roughness={0.8} />
           </mesh>
-          <mesh position={[0, -0.28 + loadHeight / 2, 0]} castShadow receiveShadow>
-            <boxGeometry args={[BAY_WIDTH * 0.68, loadHeight, RACK_DEPTH * 0.68]} />
+          <mesh
+            position={[0, -0.28 + loadHeight / 2, 0]}
+            castShadow
+            receiveShadow
+          >
+            <boxGeometry
+              args={[BAY_WIDTH * 0.68, loadHeight, RACK_DEPTH * 0.68]}
+            />
             <meshStandardMaterial
               color={color}
               emissive={selected ? color : '#000000'}
@@ -167,15 +205,28 @@ function PalletSlot({
 
       {selected && (
         <mesh>
-          <boxGeometry args={[BAY_WIDTH * 0.92, 1.15, RACK_DEPTH * 0.92]} />
-          <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.9} />
+          <boxGeometry
+            args={[BAY_WIDTH * 0.92, 1.15, RACK_DEPTH * 0.92]}
+          />
+          <meshBasicMaterial
+            color="#ffffff"
+            wireframe
+            transparent
+            opacity={0.9}
+          />
         </mesh>
       )}
     </group>
   )
 }
 
-function Aisle({ aisle, locations }: { aisle: string; locations: WarehouseLocation[] }) {
+function Aisle({
+  aisle,
+  locations,
+}: {
+  aisle: string
+  locations: WarehouseLocation[]
+}) {
   const centerZ = getAisleCenterZ(aisle)
   const selectedAddress = useWarehouseStore((state) => state.selectedAddress)
 
@@ -216,7 +267,11 @@ function Aisle({ aisle, locations }: { aisle: string; locations: WarehouseLocati
   )
 }
 
-function CameraRig({ selectedLocation }: { selectedLocation?: WarehouseLocation }) {
+function CameraRig({
+  selectedLocation,
+}: {
+  selectedLocation?: WarehouseLocation
+}) {
   const controlsRef = useRef<ElementRef<typeof OrbitControls>>(null)
   const { camera } = useThree()
   const desiredTarget = useRef(new THREE.Vector3(0, 2.5, 0))
@@ -295,7 +350,12 @@ function WarehouseScene() {
       </mesh>
 
       <gridHelper
-        args={[Math.max(FLOOR_LENGTH, FLOOR_WIDTH) + 15, 80, '#1e3a5f', '#13263c']}
+        args={[
+          Math.max(FLOOR_LENGTH, FLOOR_WIDTH) + 15,
+          80,
+          '#1e3a5f',
+          '#13263c',
+        ]}
         position={[0, 0.015, 0]}
       />
 
@@ -303,7 +363,9 @@ function WarehouseScene() {
         <Aisle
           key={aisle}
           aisle={aisle}
-          locations={visibleLocations.filter((location) => location.aisle === aisle)}
+          locations={visibleLocations.filter(
+            (location) => location.aisle === aisle,
+          )}
         />
       ))}
 
@@ -312,7 +374,13 @@ function WarehouseScene() {
   )
 }
 
-function SummaryCard({ label, value }: { label: string; value: string | number }) {
+function SummaryCard({
+  label,
+  value,
+}: {
+  label: string
+  value: string | number
+}) {
   return (
     <div className="summary-card">
       <span>{label}</span>
@@ -331,7 +399,10 @@ function FilterButton({ status }: { status: SlotStatus }) {
       className={`filter-button ${enabled ? 'is-active' : ''}`}
       onClick={() => toggleStatus(status)}
     >
-      <span className="status-dot" style={{ backgroundColor: STATUS_COLOR[status] }} />
+      <span
+        className="status-dot"
+        style={{ backgroundColor: STATUS_COLOR[status] }}
+      />
       {SLOT_STATUS_LABEL[status]}
     </button>
   )
@@ -347,13 +418,21 @@ function LocationDetails({ location }: { location: WarehouseLocation }) {
           <span className="eyebrow">Endereço selecionado</span>
           <h2>{location.address}</h2>
         </div>
-        <button type="button" className="icon-button" onClick={() => selectAddress(null)}>
+        <button
+          type="button"
+          className="icon-button"
+          onClick={() => selectAddress(null)}
+          aria-label="Fechar detalhes"
+        >
           ×
         </button>
       </div>
 
       <div className="status-line">
-        <span className="status-dot large" style={{ backgroundColor: STATUS_COLOR[location.status] }} />
+        <span
+          className="status-dot large"
+          style={{ backgroundColor: STATUS_COLOR[location.status] }}
+        />
         <div>
           <strong>{SLOT_STATUS_LABEL[location.status]}</strong>
           <small>{CONFIRMATION_LABEL[location.confirmation]}</small>
@@ -361,35 +440,82 @@ function LocationDetails({ location }: { location: WarehouseLocation }) {
       </div>
 
       <dl className="details-grid">
-        <div><dt>Rua</dt><dd>{location.aisle}</dd></div>
-        <div><dt>Lado</dt><dd>{location.side === 'left' ? 'Esquerdo — ímpar' : 'Direito — par'}</dd></div>
-        <div><dt>Posição</dt><dd>{String(location.position).padStart(2, '0')}</dd></div>
-        <div><dt>Nível</dt><dd>{location.level}</dd></div>
-        <div><dt>Zona</dt><dd>{location.zone === 'picking' ? 'Picking' : 'Reserva'}</dd></div>
-        <div><dt>SKU</dt><dd>{location.sku ?? '—'}</dd></div>
-        <div className="wide"><dt>Produto</dt><dd>{location.description ?? 'Posição sem produto informado'}</dd></div>
-        <div><dt>Quantidade</dt><dd>{location.quantity}</dd></div>
-        <div><dt>Capacidade</dt><dd>{location.capacity}</dd></div>
-        <div><dt>Lote</dt><dd>{location.lot ?? '—'}</dd></div>
-        <div className="wide"><dt>Última confirmação física</dt><dd>{location.lastCheckedAt ? '27/07/2026 às 18:30' : 'Não confirmada'}</dd></div>
+        <div>
+          <dt>Rua</dt>
+          <dd>{location.aisle}</dd>
+        </div>
+        <div>
+          <dt>Lado</dt>
+          <dd>
+            {location.side === 'left'
+              ? 'Esquerdo — ímpar'
+              : 'Direito — par'}
+          </dd>
+        </div>
+        <div>
+          <dt>Posição</dt>
+          <dd>{String(location.position).padStart(2, '0')}</dd>
+        </div>
+        <div>
+          <dt>Nível</dt>
+          <dd>{location.level}</dd>
+        </div>
+        <div>
+          <dt>Zona</dt>
+          <dd>{location.zone === 'picking' ? 'Picking' : 'Reserva'}</dd>
+        </div>
+        <div>
+          <dt>SKU</dt>
+          <dd>{location.sku ?? '—'}</dd>
+        </div>
+        <div className="wide">
+          <dt>Produto</dt>
+          <dd>{location.description ?? 'Posição sem produto informado'}</dd>
+        </div>
+        <div>
+          <dt>Quantidade</dt>
+          <dd>{location.quantity}</dd>
+        </div>
+        <div>
+          <dt>Capacidade</dt>
+          <dd>{location.capacity}</dd>
+        </div>
+        <div>
+          <dt>Lote</dt>
+          <dd>{location.lot ?? '—'}</dd>
+        </div>
+        <div className="wide">
+          <dt>Última confirmação física</dt>
+          <dd>{formatDateTime(location.lastCheckedAt)}</dd>
+        </div>
       </dl>
 
       <p className="truth-note">
-        A cena representa os dados carregados. Uma posição vazia no sistema só se torna
-        “vazia confirmada” após conferência física registrada.
+        A cena representa os dados carregados. Uma posição vazia no sistema só
+        se torna “vazia confirmada” após conferência física registrada.
       </p>
     </aside>
   )
 }
 
 export default function App() {
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const locations = useWarehouseStore((state) => state.locations)
+  const dataSource = useWarehouseStore((state) => state.dataSource)
+  const importSummary = useWarehouseStore((state) => state.importSummary)
   const selectedAddress = useWarehouseStore((state) => state.selectedAddress)
   const search = useWarehouseStore((state) => state.search)
   const setSearch = useWarehouseStore((state) => state.setSearch)
   const selectAddress = useWarehouseStore((state) => state.selectAddress)
   const resetView = useWarehouseStore((state) => state.resetView)
+  const loadImportedWarehouse = useWarehouseStore(
+    (state) => state.loadImportedWarehouse,
+  )
+  const loadDemoWarehouse = useWarehouseStore(
+    (state) => state.loadDemoWarehouse,
+  )
   const [searchFeedback, setSearchFeedback] = useState('')
+  const [importFeedback, setImportFeedback] = useState('')
 
   const summary = useMemo(() => summarizeWarehouse(locations), [locations])
   const selectedLocation = locations.find(
@@ -407,11 +533,13 @@ export default function App() {
     const match = locations.find((location) =>
       [location.address, location.sku, location.description]
         .filter(Boolean)
-        .some((value) => value!.toLocaleLowerCase('pt-BR').includes(normalizedSearch)),
+        .some((value) =>
+          value!.toLocaleLowerCase('pt-BR').includes(normalizedSearch),
+        ),
     )
 
     if (!match) {
-      setSearchFeedback('Nenhum endereço encontrado nos dados demonstrativos.')
+      setSearchFeedback('Nenhum endereço encontrado nos dados carregados.')
       return
     }
 
@@ -419,9 +547,53 @@ export default function App() {
     setSearchFeedback(`Localizado: ${match.address}`)
   }
 
+  async function handleInventoryFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0]
+    event.target.value = ''
+
+    if (!file) return
+
+    if (!file.name.toLocaleLowerCase('pt-BR').endsWith('.csv')) {
+      setImportFeedback('Nesta etapa, envie um arquivo CSV. Excel entra no próximo marco.')
+      return
+    }
+
+    try {
+      const result = importInventoryCsv(await file.text())
+
+      if (result.importedRows === 0) {
+        setImportFeedback(
+          result.issues[0]?.message ?? 'Nenhuma linha válida foi encontrada.',
+        )
+        return
+      }
+
+      loadImportedWarehouse(result.locations, {
+        fileName: file.name,
+        rowsRead: result.rowsRead,
+        importedRows: result.importedRows,
+        issueCount: result.issues.length,
+      })
+
+      setImportFeedback(
+        `${result.importedRows} linha(s) aplicada(s). ${result.issues.length} inconsistência(s) identificada(s).`,
+      )
+    } catch {
+      setImportFeedback('Não foi possível ler o arquivo. Verifique o formato do CSV.')
+    }
+  }
+
+  function restoreDemo() {
+    loadDemoWarehouse()
+    setImportFeedback('Dados demonstrativos restaurados.')
+  }
+
   return (
     <main className="app-shell">
-      <section className="viewport" aria-label="Visualização 3D do centro de distribuição">
+      <section
+        className="viewport"
+        aria-label="Visualização 3D do centro de distribuição"
+      >
         <WarehouseScene />
       </section>
 
@@ -434,7 +606,28 @@ export default function App() {
           </div>
         </div>
         <div className="topbar-actions">
-          <span className="demo-badge">Dados demonstrativos</span>
+          <span className={`demo-badge ${dataSource === 'csv' ? 'is-live-data' : ''}`}>
+            {dataSource === 'csv' ? 'CSV importado' : 'Dados demonstrativos'}
+          </span>
+          <input
+            ref={fileInputRef}
+            className="file-input"
+            type="file"
+            accept=".csv,text/csv"
+            onChange={handleInventoryFile}
+          />
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            Importar CSV
+          </button>
+          {dataSource === 'csv' && (
+            <button type="button" className="secondary-button" onClick={restoreDemo}>
+              Voltar ao demo
+            </button>
+          )}
           <button type="button" className="secondary-button" onClick={resetView}>
             Visão geral
           </button>
@@ -461,10 +654,14 @@ export default function App() {
               }}
               placeholder="Ex.: A-01-01 ou 10005"
             />
-            <button type="button" onClick={handleSearch}>Localizar</button>
+            <button type="button" onClick={handleSearch}>
+              Localizar
+            </button>
           </div>
         </label>
-        {searchFeedback && <small className="search-feedback">{searchFeedback}</small>}
+        {searchFeedback && (
+          <small className="search-feedback">{searchFeedback}</small>
+        )}
 
         <div className="filters">
           <span>Exibir na cena</span>
@@ -475,6 +672,28 @@ export default function App() {
             <FilterButton status="divergent" />
           </div>
         </div>
+
+        <div className="import-box">
+          <div>
+            <span className="eyebrow">Entrada de dados</span>
+            <strong>
+              {importSummary?.fileName ?? 'Modelo CSV disponível para teste'}
+            </strong>
+          </div>
+          <a
+            href={`${import.meta.env.BASE_URL}sample-inventory.csv`}
+            download="sample-inventory.csv"
+          >
+            Baixar exemplo
+          </a>
+          {importSummary && (
+            <small>
+              {importSummary.importedRows}/{importSummary.rowsRead} linhas aplicadas ·{' '}
+              {importSummary.issueCount} inconsistência(s)
+            </small>
+          )}
+          {importFeedback && <small>{importFeedback}</small>}
+        </div>
       </section>
 
       <div className="scene-hint">
@@ -482,7 +701,12 @@ export default function App() {
       </div>
 
       <div className="truth-banner">
-        <strong>Protótipo operacional:</strong> geometria e regras são funcionais; o estoque atual é sintético para validação.
+        <strong>
+          {dataSource === 'csv' ? 'Dados importados:' : 'Protótipo operacional:'}
+        </strong>{' '}
+        {dataSource === 'csv'
+          ? 'a cena representa o conteúdo do CSV; confirmação física continua sendo um evento separado.'
+          : 'geometria e regras são funcionais; o estoque atual é sintético para validação.'}
       </div>
 
       {selectedLocation && <LocationDetails location={selectedLocation} />}
