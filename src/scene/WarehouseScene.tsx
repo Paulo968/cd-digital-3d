@@ -20,6 +20,7 @@ import {
   SimulatedDestinationLoad,
   type PalletTransferVisualState,
 } from './PalletTransferVehicle'
+import { RealisticEnvironment } from './RealisticEnvironment'
 
 const STATUS_COLOR: Record<SlotStatus, string> = {
   occupied: '#38bdf8',
@@ -39,6 +40,44 @@ const PRODUCT_COLORS = [
 ]
 const DEFAULT_CAMERA = new THREE.Vector3(34, 30, 42)
 const DEFAULT_TARGET = new THREE.Vector3(0, 3, 0)
+
+interface SceneProfile {
+  compact: boolean
+  reducedMotion: boolean
+}
+
+function readSceneProfile(): SceneProfile {
+  if (typeof window === 'undefined') {
+    return { compact: false, reducedMotion: false }
+  }
+
+  return {
+    compact: window.matchMedia('(max-width: 700px), (pointer: coarse)').matches,
+    reducedMotion: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+  }
+}
+
+function useSceneProfile(): SceneProfile {
+  const [profile, setProfile] = useState(readSceneProfile)
+
+  useEffect(() => {
+    const compactMedia = window.matchMedia('(max-width: 700px), (pointer: coarse)')
+    const motionMedia = window.matchMedia('(prefers-reduced-motion: reduce)')
+    const update = () => setProfile(readSceneProfile())
+
+    compactMedia.addEventListener('change', update)
+    motionMedia.addEventListener('change', update)
+    window.addEventListener('resize', update)
+
+    return () => {
+      compactMedia.removeEventListener('change', update)
+      motionMedia.removeEventListener('change', update)
+      window.removeEventListener('resize', update)
+    }
+  }, [])
+
+  return profile
+}
 
 function productColor(location: WarehouseLocation): THREE.Color {
   if (location.status === 'divergent') return new THREE.Color('#f59e0b')
@@ -101,6 +140,7 @@ function RackInstances({
       for (const sideDirection of [-1, 1]) {
         const sideCenter =
           sideDirection * (row.aisleWidth / 2 + row.rackDepth / 2)
+
         for (let frame = 0; frame <= row.baysPerSide; frame += 1) {
           const localX = frame * row.bayWidth - rackLength / 2
           for (const depthDirection of [-1, 1]) {
@@ -118,6 +158,7 @@ function RackInstances({
             postIndex += 1
           }
         }
+
         for (let level = 0; level < row.levels; level += 1) {
           const y = level * row.levelHeight + 0.18
           for (const depthDirection of [-1, 1]) {
@@ -498,14 +539,17 @@ function RouteForklift({
     const distance = Math.min(progress.current, total)
     let remaining = distance
     let segment = 0
+
     while (segment < lengths.length && remaining > lengths[segment]) {
       remaining -= lengths[segment]
       segment += 1
     }
+
     if (segment >= lengths.length) {
       running.current = false
       return
     }
+
     const from = points[segment]
     const to = points[segment + 1]
     const ratio = lengths[segment] === 0 ? 1 : remaining / lengths[segment]
@@ -603,7 +647,7 @@ function CameraRig({
       screenSpacePanning
       dampingFactor={0.08}
       minDistance={2}
-      maxDistance={140}
+      maxDistance={180}
       maxPolarAngle={Math.PI / 2.01}
       onStart={() => {
         animating.current = false
@@ -633,6 +677,7 @@ export function WarehouseScene({
   cameraResetToken: number
   onSelect: (address: string | null) => void
 }) {
+  const profile = useSceneProfile()
   const transfer = usePalletTransferSimulationStore(
     (state) => state.simulation,
   )
@@ -673,6 +718,12 @@ export function WarehouseScene({
     transfer?.loadedPoints.map(
       (point) => [point.x, 0.11, point.z] as [number, number, number],
     ) ?? []
+  const realisticShadows = mode === 'realistic' && !profile.compact
+  const ambientAnimation =
+    mode === 'realistic' &&
+    !profile.reducedMotion &&
+    !transfer &&
+    !routePlan
 
   useEffect(() => {
     if (!transfer) setTransferVisual(EMPTY_TRANSFER_VISUAL)
@@ -681,13 +732,13 @@ export function WarehouseScene({
   return (
     <Canvas
       frameloop="demand"
-      shadows={mode === 'realistic'}
-      dpr={[1, 1.45]}
+      shadows={realisticShadows}
+      dpr={[1, profile.compact ? 1.1 : 1.45]}
       camera={{
         position: [DEFAULT_CAMERA.x, DEFAULT_CAMERA.y, DEFAULT_CAMERA.z],
         fov: 46,
         near: 0.1,
-        far: 260,
+        far: 320,
       }}
       onPointerMissed={() => onSelect(null)}
     >
@@ -697,24 +748,33 @@ export function WarehouseScene({
       />
       <fog
         attach="fog"
-        args={[mode === 'operational' ? '#f4f7fa' : '#111820', 60, 170]}
+        args={[mode === 'operational' ? '#f4f7fa' : '#111820', 70, 210]}
       />
-      <ambientLight intensity={mode === 'operational' ? 1.4 : 0.55} />
+      <ambientLight intensity={mode === 'operational' ? 1.4 : 0.62} />
       <hemisphereLight
         args={[
           mode === 'operational' ? '#ffffff' : '#eef6ff',
           mode === 'operational' ? '#cbd5e1' : '#1f2937',
-          1.1,
+          mode === 'operational' ? 1.1 : 0.9,
         ]}
       />
       <directionalLight
         position={[24, 32, 18]}
-        intensity={mode === 'operational' ? 1.4 : 2.2}
-        castShadow={mode === 'realistic'}
-        shadow-mapSize-width={2048}
-        shadow-mapSize-height={2048}
+        intensity={mode === 'operational' ? 1.4 : 2.05}
+        castShadow={realisticShadows}
+        shadow-mapSize-width={profile.compact ? 1024 : 2048}
+        shadow-mapSize-height={profile.compact ? 1024 : 2048}
       />
+
       <FloorAndZones layout={layout} mode={mode} />
+      {mode === 'realistic' && (
+        <RealisticEnvironment
+          layout={layout}
+          locations={locations}
+          animated={ambientAnimation}
+          compact={profile.compact}
+        />
+      )}
       <RackInstances layout={layout} mode={mode} />
       <SlotInstances
         layout={layout}
