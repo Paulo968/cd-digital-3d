@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { PalletTransferSimulation } from '../domain/palletTransferSimulation'
 import { useDigitalTwinStore, type ActionResult } from './digitalTwinStore'
+import { useOperationalVehicleStore } from './operationalVehicleStore'
 
 export type PalletTransferStatus = 'idle' | 'running' | 'completed'
 
@@ -92,12 +93,18 @@ export const usePalletTransferSimulationStore =
         physicalConfirmation: false,
       })
 
-      if (result.ok) set({ simulation: null, status: 'idle' })
+      if (result.ok) {
+        useOperationalVehicleStore
+          .getState()
+          .parkAtAddress(simulation.destinationAddress)
+        set({ simulation: null, status: 'idle' })
+      }
+
       return result.ok
         ? {
             ok: true,
             message:
-              'Movimentação aplicada somente ao cenário sistêmico, sem confirmação física.',
+              'Movimentação aplicada ao cenário sistêmico. A EMP-01 ficou estacionada no destino, sem confirmação física.',
           }
         : result
     },
