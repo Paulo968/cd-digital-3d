@@ -5,6 +5,7 @@ import { MovementPanel } from '../features/MovementPanel'
 import { SimulationPanel } from '../features/SimulationPanel'
 import { ImportPanel } from '../features/ImportPanel'
 import { WarehouseScene } from '../scene/WarehouseScene'
+import type { RoutePlan } from '../domain/routePlanning'
 import {
   generateWarehouseSkeleton,
   summarizeWarehouse,
@@ -13,6 +14,10 @@ import {
   type SlotStatus,
 } from '../domain/warehouse'
 import { useDigitalTwinStore, type ActivePanel } from '../store/digitalTwinStore'
+import {
+  resolveOperationalVehiclePoint,
+  useOperationalVehicleStore,
+} from '../store/operationalVehicleStore'
 import './app.css'
 import './panel-toggle.css'
 
@@ -301,6 +306,7 @@ function initialPanelCollapsed(): boolean {
 
 export default function App() {
   const state = useDigitalTwinStore()
+  const vehicleAnchor = useOperationalVehicleStore((store) => store.anchor)
   const [panelCollapsed, setPanelCollapsed] = useState(initialPanelCollapsed)
   const skeleton = useMemo(
     () => generateWarehouseSkeleton(state.layout),
@@ -309,6 +315,31 @@ export default function App() {
   const selected = state.locations.find(
     (location) => location.address === state.selectedAddress,
   )
+  const parkedVehiclePoint = useMemo(
+    () =>
+      resolveOperationalVehiclePoint(
+        state.layout,
+        state.locations,
+        vehicleAnchor,
+      ),
+    [state.layout, state.locations, vehicleAnchor],
+  )
+  const parkedVehiclePlan = useMemo<RoutePlan>(
+    () => ({
+      mode: 'reference',
+      addresses: [],
+      points: [parkedVehiclePoint],
+      distance: 0,
+      baselineDistance: 0,
+      savedDistance: 0,
+      savedPercent: 0,
+      createdAt: 'operational-vehicle-parked',
+    }),
+    [parkedVehiclePoint],
+  )
+  const sceneRoutePlan =
+    state.routePlan ??
+    (state.renderMode === 'operational' ? parkedVehiclePlan : null)
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -348,7 +379,7 @@ export default function App() {
           selectedAddress={state.selectedAddress}
           visibleStatuses={state.visibleStatuses}
           mode={state.renderMode}
-          routePlan={state.routePlan}
+          routePlan={sceneRoutePlan}
           routeRunToken={state.routeRunToken}
           cameraResetToken={state.cameraResetToken}
           onSelect={state.selectAddress}
