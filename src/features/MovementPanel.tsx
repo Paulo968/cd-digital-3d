@@ -79,7 +79,7 @@ export function MovementPanel({
           return (
             type === 'replenishment' &&
             location.zone === 'picking' &&
-            Boolean(sourceLocation) &&
+            sourceLocation !== undefined &&
             sameStockIdentity(sourceLocation, location)
           )
         })
