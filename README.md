@@ -4,9 +4,11 @@ Gêmeo digital 3D orientado por dados para representar endereços, ocupação, p
 
 ## Estado atual
 
-O projeto está na fase inicial de construção. A primeira entrega usa **dados demonstrativos sintéticos**, claramente identificados como simulação, para validar a arquitetura, a navegação 3D e as regras de endereçamento antes de integrar dados reais de ERP/WMS.
+A primeira entrega funcional já contém o mini CD 3D, navegação, consulta de endereços, filtros, busca e importação validada de CSV. O projeto inicia com **dados demonstrativos sintéticos**, claramente identificados como simulação, e permite substituí-los por um arquivo CSV.
 
-## Escopo inicial
+A importação representa o conteúdo sistêmico do arquivo. Uma posição só é apresentada como fisicamente confirmada quando o dado de conferência também estiver informado.
+
+## Escopo implementado
 
 - 7 ruas: A até G;
 - 8 posições de cada lado por rua;
@@ -17,7 +19,12 @@ O projeto está na fase inicial de construção. A primeira entrega usa **dados 
 - níveis 2 a 7 destinados ao estoque de reserva;
 - 784 endereços logísticos gerados por configuração;
 - pallets e ocupação derivados dos dados;
-- busca, filtros e consulta de endereço no ambiente 3D.
+- busca por endereço, SKU ou descrição;
+- filtros por posição ocupada, vazia, bloqueada ou divergente;
+- consulta detalhada ao clicar em uma posição;
+- importação de CSV com validação de endereço e duplicidade;
+- arquivo CSV demonstrativo para teste;
+- publicação automatizada preparada para GitHub Pages.
 
 ## Princípios do produto
 
@@ -27,24 +34,63 @@ O projeto está na fase inicial de construção. A primeira entrega usa **dados 
 4. Regras operacionais não ficam acopladas ao renderizador 3D.
 5. Cada funcionalidade deve ter uso plausível em uma operação real.
 
-## Arquitetura prevista
+## Stack
 
 - React + TypeScript + Vite;
-- Three.js com React Three Fiber;
-- estado compartilhado fora do renderizador;
-- importação futura de CSV/Excel;
-- auditoria física e rastreabilidade em etapas posteriores;
-- motor de rotas e simulação separado da cena 3D.
+- Three.js com React Three Fiber e Drei;
+- Zustand para o estado da aplicação;
+- importador CSV próprio com validações;
+- GitHub Actions para build e publicação.
+
+## Executar localmente
+
+```bash
+npm install
+npm run dev
+```
+
+Para validar a versão de produção:
+
+```bash
+npm run build
+npm run preview
+```
+
+## Formato inicial do CSV
+
+Colunas aceitas:
+
+```text
+endereco;sku;descricao;quantidade;capacidade;lote;status;confirmacao;ultima_conferencia
+```
+
+Exemplo de endereço:
+
+```text
+A-01-01
+```
+
+Onde:
+
+- `A` é a rua;
+- `01` é a posição horizontal;
+- posição ímpar representa o lado esquerdo;
+- posição par representa o lado direito;
+- o último `01` é o nível;
+- nível 1 é picking;
+- níveis 2 a 7 são reserva.
+
+O arquivo `public/sample-inventory.csv` pode ser usado para testar a importação.
 
 ## Roadmap resumido
 
 ### Marco 1 — Visualizador 3D
 
-Mini CD gerado por configuração, pallets orientados por dados, navegação, busca, filtros e consulta de posições.
+Mini CD gerado por configuração, pallets orientados por dados, navegação, busca, filtros e consulta de posições. **Em construção avançada.**
 
 ### Marco 2 — Importação e auditoria
 
-Importação de planilha, validação de dados, confirmação física, divergências e histórico.
+Importação de CSV implementada. Próximas etapas: Excel, confirmação física por usuário, QR Code, foto, divergências e histórico.
 
 ### Marco 3 — Movimentação interna
 
