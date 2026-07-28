@@ -1,0 +1,21 @@
+endereco;sku;descricao;quantidade;capacidade;lote;status;confirmacao;ultima_conferencia
+A-01-01;10001;Arroz tipo 1 5kg;86;120;L240701;ocupado;confirmado;2026-07-27T18:30:00-03:00
+A-02-01;10002;Feijao carioca 1kg;54;120;L240702;ocupado;confirmado;2026-07-27T18:32:00-03:00
+A-03-01;10003;Oleo de soja 900ml;22;120;L240703;divergente;pendente;
+A-04-01;;;0;120;;vazio;confirmado;2026-07-27T18:40:00-03:00
+A-05-01;10004;Acucar cristal 5kg;98;120;L240704;ocupado;sistema;
+A-06-01;;;0;120;;bloqueado;pendente;
+A-07-02;10005;Cafe torrado 500g;1;1;L240705;ocupado;confirmado;2026-07-27T18:45:00-03:00
+A-08-03;10006;Macarrao espaguete 500g;1;1;L240706;ocupado;sistema;
+B-01-01;10007;Leite integral 1L;112;120;L240707;ocupado;confirmado;2026-07-27T19:00:00-03:00
+B-02-01;10008;Farinha de trigo 1kg;37;120;L240708;ocupado;sistema;
+B-03-04;10009;Molho de tomate 300g;1;1;L240709;ocupado;confirmado;2026-07-27T19:05:00-03:00
+B-04-05;;;0;1;;vazio;sistema;
+C-01-01;10010;Biscoito agua e sal 350g;64;120;L240710;ocupado;confirmado;2026-07-27T19:10:00-03:00
+C-02-06;10001;Arroz tipo 1 5kg;1;1;L240711;ocupado;sistema;
+D-05-07;10002;Feijao carioca 1kg;1;1;L240712;ocupado;confirmado;2026-07-27T19:20:00-03:00
+E-09-01;10003;Oleo de soja 900ml;75;120;L240713;divergente;pendente;
+E-10-03;10004;Acucar cristal 5kg;1;1;L240714;ocupado;sistema;
+F-13-02;10005;Cafe torrado 500g;1;1;L240715;ocupado;confirmado;2026-07-27T19:30:00-03:00
+G-15-01;10006;Macarrao espaguete 500g;43;120;L240716;ocupado;confirmado;2026-07-27T19:35:00-03:00
+G-16-07;;;0;1;;bloqueado;pendente;
