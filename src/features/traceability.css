@@ -1,0 +1,15 @@
+.trace-qr {
+  width: 92px;
+  height: 92px;
+  flex: 0 0 auto;
+  border-radius: 8px;
+  background: #fff;
+  image-rendering: pixelated;
+}
+
+@media (max-width: 430px) {
+  .trace-qr {
+    width: 76px;
+    height: 76px;
+  }
+}
