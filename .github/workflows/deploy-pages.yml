@@ -28,7 +28,10 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
+
+      - name: Lint
+        run: npm run lint
 
       - name: Build
         run: npm run build
@@ -52,7 +55,7 @@ jobs:
           gh api --method POST "repos/${REPOSITORY}/statuses/${SHA}" \
             -f state=success \
             -f context='cd-digital-3d/build' \
-            -f description='Build e artefato concluídos' \
+            -f description='Lint, build e artefato concluídos' \
             -f target_url="${RUN_URL}"
 
       - name: Report build failure
@@ -66,7 +69,7 @@ jobs:
           gh api --method POST "repos/${REPOSITORY}/statuses/${SHA}" \
             -f state=failure \
             -f context='cd-digital-3d/build' \
-            -f description='Falha no build; consulte o log' \
+            -f description='Falha no lint ou build; consulte o log' \
             -f target_url="${RUN_URL}"
 
   deploy:
