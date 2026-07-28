@@ -28,6 +28,12 @@ export const EMPTY_TRANSFER_VISUAL: PalletTransferVisualState = {
 
 const TRAVEL_FORK_HEIGHT = 0.36
 const APPROACH_DISTANCE = 0.9
+const EMPTY_TRAVEL_SPEED = 4.2
+const LOADED_TRAVEL_SPEED = 3.2
+const LIFT_SPEED = 2.6
+const TURN_DURATION = 0.45
+const APPROACH_DURATION = 0.5
+const HANDLING_PAUSE = 0.6
 
 function colorForSku(sku: string): string {
   const palette = [
@@ -40,9 +46,10 @@ function colorForSku(sku: string): string {
     '#22d3ee',
     '#c084fc',
   ]
-  const hash = [...sku].reduce((total, character) => {
-    return total + character.charCodeAt(0)
-  }, 0)
+  const hash = [...sku].reduce(
+    (total, character) => total + character.charCodeAt(0),
+    0,
+  )
   return palette[hash % palette.length]
 }
 
@@ -146,6 +153,7 @@ export function PalletTransferVehicle({
   const vehicleRef = useRef<THREE.Group | null>(null)
   const carriageRef = useRef<THREE.Group | null>(null)
   const phaseRef = useRef<PalletTransferPhase>('idle')
+  const stepRef = useRef(0)
   const distanceRef = useRef(0)
   const stageRef = useRef(0)
   const pickupDoneRef = useRef(false)
@@ -192,9 +200,12 @@ export function PalletTransferVehicle({
     }
 
     const first = simulation.emptyPoints[0]
+    if (!first) return
+
     vehicleRef.current.position.set(first.x, 0.18, first.z)
     carriageRef.current.position.y = TRAVEL_FORK_HEIGHT
     phaseRef.current = 'going-to-source'
+    stepRef.current = 0
     distanceRef.current = 0
     stageRef.current = 0
     pickupDoneRef.current = false
@@ -221,44 +232,65 @@ export function PalletTransferVehicle({
     const plan = simulation
     if (!vehicle || !carriage || !plan) return
 
-    const enter = (phase: PalletTransferPhase) => {
+    const enterPhase = (phase: PalletTransferPhase) => {
       phaseRef.current = phase
+      stepRef.current = 0
       stageRef.current = 0
       distanceRef.current = 0
+    }
+    const nextStep = () => {
+      stepRef.current += 1
+      stageRef.current = 0
     }
 
     const phase = phaseRef.current
     if (phase === 'idle' || phase === 'completed') return
 
     if (phase === 'going-to-source') {
-      distanceRef.current += delta * 4.2
+      distanceRef.current += delta * EMPTY_TRAVEL_SPEED
       const finished = placeOnRoute(
         vehicle,
         plan.emptyPoints,
         emptyLengths,
         distanceRef.current,
       )
-      if (finished) enter('collecting')
+      if (finished) {
+        enterPhase('collecting')
+        onVisual({
+          hiddenSource: false,
+          cargoAtDestination: false,
+          phase: 'collecting',
+        })
+      }
     } else if (phase === 'collecting' && sourceAccess && sourceApproach) {
-      stageRef.current += delta
-      const stage = stageRef.current
+      const step = stepRef.current
 
-      if (stage < 0.45) {
+      if (step === 0) {
+        stageRef.current += delta
         vehicle.rotation.y = angleTowards(
           vehicle.rotation.y,
           plan.sourceFacing,
           Math.min(1, delta * 8),
         )
-      } else if (stage < 0.95) {
+        if (stageRef.current >= TURN_DURATION) {
+          vehicle.rotation.y = plan.sourceFacing
+          nextStep()
+        }
+      } else if (step === 1) {
         carriage.position.y = moveNumber(
           carriage.position.y,
           plan.sourceForkHeight,
-          delta * 3.4,
+          delta * LIFT_SPEED,
         )
-      } else if (stage < 1.45) {
-        interpolatePosition(vehicle, sourceAccess, sourceApproach, (stage - 0.95) / 0.5)
-      } else if (stage < 2.05) {
-        if (!pickupDoneRef.current) {
+        if (carriage.position.y === plan.sourceForkHeight) nextStep()
+      } else if (step === 2) {
+        stageRef.current += delta
+        const ratio = Math.min(1, stageRef.current / APPROACH_DURATION)
+        interpolatePosition(vehicle, sourceAccess, sourceApproach, ratio)
+        if (ratio === 1) nextStep()
+      } else if (step === 3) {
+        stageRef.current += delta
+        if (!pickupDoneRef.current && stageRef.current >= 0.15) {
           pickupDoneRef.current = true
           setCargoVisible(true)
           onVisual({
@@ -267,16 +299,20 @@ export function PalletTransferVehicle({
             phase: 'collecting',
           })
         }
-      } else if (stage < 2.55) {
-        interpolatePosition(vehicle, sourceApproach, sourceAccess, (stage - 2.05) / 0.5)
+        if (stageRef.current >= HANDLING_PAUSE) nextStep()
+      } else if (step === 4) {
+        stageRef.current += delta
+        const ratio = Math.min(1, stageRef.current / APPROACH_DURATION)
+        interpolatePosition(vehicle, sourceApproach, sourceAccess, ratio)
+        if (ratio === 1) nextStep()
       } else {
         carriage.position.y = moveNumber(
           carriage.position.y,
           TRAVEL_FORK_HEIGHT,
-          delta * 3.4,
+          delta * LIFT_SPEED,
         )
         if (carriage.position.y === TRAVEL_FORK_HEIGHT) {
-          enter('transporting')
+          enterPhase('transporting')
           onVisual({
             hiddenSource: true,
             cargoAtDestination: false,
@@ -285,43 +321,54 @@ export function PalletTransferVehicle({
         }
       }
     } else if (phase === 'transporting') {
-      distanceRef.current += delta * 3.2
+      distanceRef.current += delta * LOADED_TRAVEL_SPEED
       const finished = placeOnRoute(
         vehicle,
         plan.loadedPoints,
         loadedLengths,
         distanceRef.current,
       )
-      if (finished) enter('depositing')
+      if (finished) {
+        enterPhase('depositing')
+        onVisual({
+          hiddenSource: true,
+          cargoAtDestination: false,
+          phase: 'depositing',
+        })
+      }
     } else if (
       phase === 'depositing' &&
       destinationAccess &&
       destinationApproach
     ) {
-      stageRef.current += delta
-      const stage = stageRef.current
+      const step = stepRef.current
 
-      if (stage < 0.45) {
+      if (step === 0) {
+        stageRef.current += delta
         vehicle.rotation.y = angleTowards(
           vehicle.rotation.y,
           plan.destinationFacing,
           Math.min(1, delta * 8),
         )
-      } else if (stage < 0.95) {
+        if (stageRef.current >= TURN_DURATION) {
+          vehicle.rotation.y = plan.destinationFacing
+          nextStep()
+        }
+      } else if (step === 1) {
         carriage.position.y = moveNumber(
           carriage.position.y,
           plan.destinationForkHeight,
-          delta * 3.4,
+          delta * LIFT_SPEED,
         )
-      } else if (stage < 1.45) {
-        interpolatePosition(
-          vehicle,
-          destinationAccess,
-          destinationApproach,
-          (stage - 0.95) / 0.5,
-        )
-      } else if (stage < 2.05) {
-        if (!dropDoneRef.current) {
+        if (carriage.position.y === plan.destinationForkHeight) nextStep()
+      } else if (step === 2) {
+        stageRef.current += delta
+        const ratio = Math.min(1, stageRef.current / APPROACH_DURATION)
+        interpolatePosition(vehicle, destinationAccess, destinationApproach, ratio)
+        if (ratio === 1) nextStep()
+      } else if (step === 3) {
+        stageRef.current += delta
+        if (!dropDoneRef.current && stageRef.current >= 0.15) {
           dropDoneRef.current = true
           setCargoVisible(false)
           onVisual({
@@ -330,18 +377,17 @@ export function PalletTransferVehicle({
             phase: 'depositing',
           })
         }
-      } else if (stage < 2.55) {
-        interpolatePosition(
-          vehicle,
-          destinationApproach,
-          destinationAccess,
-          (stage - 2.05) / 0.5,
-        )
+        if (stageRef.current >= HANDLING_PAUSE) nextStep()
+      } else if (step === 4) {
+        stageRef.current += delta
+        const ratio = Math.min(1, stageRef.current / APPROACH_DURATION)
+        interpolatePosition(vehicle, destinationApproach, destinationAccess, ratio)
+        if (ratio === 1) nextStep()
       } else {
         carriage.position.y = moveNumber(
           carriage.position.y,
           TRAVEL_FORK_HEIGHT,
-          delta * 3.4,
+          delta * LIFT_SPEED,
         )
         if (carriage.position.y === TRAVEL_FORK_HEIGHT) {
           phaseRef.current = 'completed'
