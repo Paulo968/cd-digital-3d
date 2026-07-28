@@ -61,6 +61,7 @@ export function buildPalletTransferSimulation(
   source: WarehouseLocation,
   destination: WarehouseLocation,
   blocked: { left: boolean; right: boolean },
+  vehicleStart: WorldPoint = getZoneWorldPoint(layout, 'shipping'),
 ): PalletTransferSimulation {
   if (source.address === destination.address) {
     throw new Error('Origem e destino precisam ser diferentes.')
@@ -80,10 +81,9 @@ export function buildPalletTransferSimulation(
     )
   }
 
-  const home = getZoneWorldPoint(layout, 'shipping')
   const sourceAccess = getLocationAccessPoint(layout, source)
   const destinationAccess = getLocationAccessPoint(layout, destination)
-  const emptyPoints = buildTravelPath(layout, home, sourceAccess, blocked)
+  const emptyPoints = buildTravelPath(layout, vehicleStart, sourceAccess, blocked)
   const loadedPoints = buildTravelPath(
     layout,
     sourceAccess,
