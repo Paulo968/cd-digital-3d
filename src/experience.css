@@ -1,0 +1,118 @@
+.address-format {
+  display: block;
+  margin-top: 5px;
+  color: #7f93a8;
+  font-size: 0.66rem;
+  line-height: 1.35;
+}
+
+.address-navigator {
+  margin-top: 13px;
+  padding: 10px;
+  border: 1px solid rgba(56, 189, 248, 0.18);
+  border-radius: 11px;
+  background: rgba(2, 18, 31, 0.62);
+}
+
+.address-navigator > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #cbd5e1;
+  font-size: 0.72rem;
+  font-weight: 800;
+}
+
+.address-navigator > div {
+  display: grid;
+  grid-template-columns: 0.85fr 1.15fr 0.95fr auto;
+  gap: 6px;
+  align-items: end;
+}
+
+.address-navigator label {
+  display: grid;
+  gap: 4px;
+  color: #8fa3b7;
+  font-size: 0.61rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.address-navigator select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 6px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 8px;
+  outline: none;
+  color: #f8fafc;
+  background: #081522;
+  cursor: pointer;
+}
+
+.address-navigator select:focus {
+  border-color: rgba(56, 189, 248, 0.72);
+  box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.08);
+}
+
+.address-navigator button,
+.focus-location-button {
+  border: 1px solid rgba(56, 189, 248, 0.42);
+  border-radius: 8px;
+  color: #f0f9ff;
+  background: linear-gradient(180deg, #0284c7, #0369a1);
+  font-weight: 800;
+  cursor: pointer;
+  transition: transform 160ms ease, filter 160ms ease;
+}
+
+.address-navigator button {
+  min-height: 34px;
+  padding: 8px 11px;
+}
+
+.address-navigator button:hover,
+.focus-location-button:hover {
+  filter: brightness(1.08);
+  transform: translateY(-1px);
+}
+
+.focus-location-button {
+  width: 100%;
+  margin-top: 12px;
+  padding: 9px 12px;
+}
+
+.scene-hint-mobile {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .control-panel {
+    max-height: calc(100vh - 155px);
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .address-navigator > div {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .address-navigator button {
+    grid-column: 1 / -1;
+  }
+
+  .scene-hint-desktop {
+    display: none;
+  }
+
+  .scene-hint-mobile {
+    display: block;
+  }
+
+  .search-field input {
+    font-size: 0.78rem;
+  }
+}
