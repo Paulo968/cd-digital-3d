@@ -44,8 +44,9 @@ export function stoppingDistance(
 }
 
 export function probeDynamicSafety(input: SafetyProbeInput): SafetyProbeResult {
+  // routePlanning usa atan2(deltaX, deltaZ): facing 0 aponta para +Z.
   const headingX = Math.sin(input.facing)
-  const headingZ = -Math.cos(input.facing)
+  const headingZ = Math.cos(input.facing)
   let nearest:
     | {
         hazard: DynamicHazard
