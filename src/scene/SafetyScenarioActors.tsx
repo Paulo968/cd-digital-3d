@@ -1,5 +1,5 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import {
   chooseMovingVehicleForFault,
@@ -48,11 +48,19 @@ function TemporaryObstacle({ compact }: { compact: boolean }) {
         <>
           <mesh position={[0, 0.32, 0.54]}>
             <boxGeometry args={[1.05, 0.12, 0.03]} />
-            <meshStandardMaterial color="#facc15" emissive="#facc15" emissiveIntensity={0.6} />
+            <meshStandardMaterial
+              color="#facc15"
+              emissive="#facc15"
+              emissiveIntensity={0.6}
+            />
           </mesh>
           <mesh position={[0, 0.32, -0.54]}>
             <boxGeometry args={[1.05, 0.12, 0.03]} />
-            <meshStandardMaterial color="#facc15" emissive="#facc15" emissiveIntensity={0.6} />
+            <meshStandardMaterial
+              color="#facc15"
+              emissive="#facc15"
+              emissiveIntensity={0.6}
+            />
           </mesh>
         </>
       )}
@@ -79,7 +87,10 @@ export function SafetyScenarioActors({
   const pedestrianStartX = Math.min(receivingX, shippingX) - 2.2
   const pedestrianEndX = Math.max(receivingX, shippingX) + 2.2
   const crossingZ = frontZ - 8.5
-  const obstaclePoint = { x: centerX, y: 0.2, z: frontZ - 10.5 }
+  const obstaclePoint = useMemo(
+    () => ({ x: centerX, y: 0.2, z: frontZ - 10.5 }),
+    [centerX, frontZ],
+  )
 
   const later = useCallback((callback: () => void, delay: number) => {
     const id = window.setTimeout(callback, delay)
@@ -125,9 +136,9 @@ export function SafetyScenarioActors({
   }, [compact, invalidate, later])
 
   useEffect(() => {
-    const pedestrianInitial = later(startPedestrian, compact ? 6500 : 4200)
-    const obstacleInitial = later(startObstacle, compact ? 12500 : 9000)
-    const breakdownInitial = later(startBreakdown, compact ? 19000 : 14500)
+    later(startPedestrian, compact ? 6500 : 4200)
+    later(startObstacle, compact ? 12500 : 9000)
+    later(startBreakdown, compact ? 19000 : 14500)
 
     intervalIdsRef.current.push(
       window.setInterval(startPedestrian, compact ? 26000 : 19000),
@@ -136,9 +147,6 @@ export function SafetyScenarioActors({
     )
 
     return () => {
-      window.clearTimeout(pedestrianInitial)
-      window.clearTimeout(obstacleInitial)
-      window.clearTimeout(breakdownInitial)
       timeoutIdsRef.current.forEach((id) => window.clearTimeout(id))
       intervalIdsRef.current.forEach((id) => window.clearInterval(id))
       timeoutIdsRef.current = []
