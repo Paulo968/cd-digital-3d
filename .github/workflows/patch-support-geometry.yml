@@ -1,0 +1,66 @@
+name: Patch support geometry
+
+on:
+  push:
+    branches: [feat/realistic-mission-engine]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/realistic-mission-engine
+
+      - name: Correct receiving and truck supports
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('src/scene/RealisticEnvironment.tsx')
+          text = path.read_text()
+          text = text.replace(
+              "? { x: zone.origin.x, y: PALLET_HEIGHT / 2 + 0.03, z: zone.origin.z }",
+              "? { x: zone.origin.x, y: 0.31, z: zone.origin.z }",
+          )
+          text = text.replace(
+              "y: PALLET_HEIGHT / 2 + 0.03,\n    z: geometry.frontZ - 4,",
+              "y: 0.31,\n    z: geometry.frontZ - 4,",
+          )
+          text = text.replace(
+              "const truckSupportY = 0.48",
+              "const truckSupportY = 0.58",
+          )
+          marker = "      <WarehouseShell layout={layout} geometry={geometry} compact={compact} />\n      <RealisticMissionCycle"
+          replacement = """      <WarehouseShell layout={layout} geometry={geometry} compact={compact} />
+      <mesh
+        position={[
+          stops[0].restingPoint.x,
+          stops[0].restingPoint.y - PALLET_HEIGHT / 2 - 0.125,
+          stops[0].restingPoint.z,
+        ]}
+        receiveShadow
+        castShadow
+      >
+        <boxGeometry args={[2.2, 0.25, 1.6]} />
+        <meshStandardMaterial color=\"#475569\" metalness={0.18} roughness={0.82} />
+      </mesh>
+      <RealisticMissionCycle"""
+          if marker not in text:
+              raise SystemExit('Marcador para plataforma de recebimento não encontrado.')
+          text = text.replace(marker, replacement)
+          path.write_text(text)
+          PY
+
+      - name: Commit correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/scene/RealisticEnvironment.tsx
+          git commit -m "fix: alinha pallet ao recebimento e ao piso do caminhão"
+          git push origin HEAD:feat/realistic-mission-engine
