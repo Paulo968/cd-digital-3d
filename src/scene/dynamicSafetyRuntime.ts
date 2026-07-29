@@ -1,0 +1,66 @@
+import type { DynamicHazard } from '../domain/dynamicSafety'
+import type { WorldPoint } from '../domain/routePlanning'
+
+export interface RuntimeVehicleState {
+  id: string
+  point: WorldPoint
+  radius: number
+  speed: number
+  active: boolean
+}
+
+const hazards = new Map<string, DynamicHazard>()
+const vehicles = new Map<string, RuntimeVehicleState>()
+const faultedVehicles = new Set<string>()
+
+export function upsertRuntimeVehicle(state: RuntimeVehicleState): void {
+  vehicles.set(state.id, state)
+  hazards.set(state.id, {
+    id: state.id,
+    kind: 'vehicle',
+    point: state.point,
+    radius: state.radius,
+    active: state.active,
+  })
+}
+
+export function removeRuntimeVehicle(vehicleId: string): void {
+  vehicles.delete(vehicleId)
+  hazards.delete(vehicleId)
+  faultedVehicles.delete(vehicleId)
+}
+
+export function upsertRuntimeHazard(hazard: DynamicHazard): void {
+  hazards.set(hazard.id, hazard)
+}
+
+export function removeRuntimeHazard(hazardId: string): void {
+  hazards.delete(hazardId)
+}
+
+export function readRuntimeHazards(): DynamicHazard[] {
+  return [...hazards.values()]
+}
+
+export function setRuntimeVehicleFault(vehicleId: string, faulted: boolean): void {
+  if (faulted) faultedVehicles.add(vehicleId)
+  else faultedVehicles.delete(vehicleId)
+}
+
+export function isRuntimeVehicleFaulted(vehicleId: string): boolean {
+  return faultedVehicles.has(vehicleId)
+}
+
+export function chooseMovingVehicleForFault(): string | null {
+  const candidate = [...vehicles.values()]
+    .filter((vehicle) => vehicle.active && vehicle.speed > 0.55)
+    .sort((left, right) => right.speed - left.speed)[0]
+
+  return candidate?.id ?? null
+}
+
+export function resetDynamicSafetyRuntime(): void {
+  hazards.clear()
+  vehicles.clear()
+  faultedVehicles.clear()
+}
