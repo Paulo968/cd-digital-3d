@@ -444,10 +444,17 @@ export function readyMissions(
   statuses: Record<string, FleetMissionStatus>,
   palletStops: Record<string, RealisticMissionStop | null>,
 ): FleetMission[] {
+  const palletsInActiveMissions = new Set(
+    missions
+      .filter((mission) => statuses[mission.id] === 'running')
+      .map((mission) => mission.palletId),
+  )
+
   return missions
     .filter(
       (mission) =>
         statuses[mission.id] === 'pending' &&
+        !palletsInActiveMissions.has(mission.palletId) &&
         palletStops[mission.palletId]?.id === mission.source.id,
     )
     .sort(
