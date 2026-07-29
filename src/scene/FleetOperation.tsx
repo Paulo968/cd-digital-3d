@@ -21,7 +21,11 @@ import {
 } from '../domain/realisticFleet'
 import type { RealisticMissionStop } from '../domain/realisticMissionQueue'
 import { buildTravelPath, type WorldPoint } from '../domain/routePlanning'
-import { TRAVEL_FORK_HEIGHT } from '../domain/warehouseGeometry'
+import {
+  LOAD_SUPPORT_CLEARANCE,
+  PALLET_HEIGHT,
+  TRAVEL_FORK_HEIGHT,
+} from '../domain/warehouseGeometry'
 import type { WarehouseLocation } from '../domain/warehouse'
 import {
   resolveOperationalVehicleFacing,
@@ -92,6 +96,7 @@ const HANDLING_PAUSE = 0.65
 const LIFT_SPEED = 2.25
 const FORKLIFT_CARGO_LOCAL_Z = -1.62
 const PALLET_JACK_CARGO_LOCAL_Z = -1.03
+const PALLET_LOAD_HEIGHT = 0.82
 
 function rotatePoint(
   x: number,
@@ -231,13 +236,13 @@ function VehicleMissionRunner({
   }, [])
 
   const registerVehicle = useCallback(
-    (root: THREE.Group, speed: number) => {
+    (root: THREE.Group, speed: number, active: boolean) => {
       upsertRuntimeVehicle({
         id: vehicle.id,
         point: currentVehiclePoint(root),
         radius,
         speed,
-        active: root.visible,
+        active,
       })
     },
     [radius, vehicle.id],
@@ -252,7 +257,7 @@ function VehicleMissionRunner({
     root.rotation.y = initialPose.facing
     carriage.position.y = TRAVEL_FORK_HEIGHT
     initializedRef.current = true
-    registerVehicle(root, 0)
+    registerVehicle(root, 0, false)
     setReady(true)
     invalidate()
 
@@ -274,7 +279,7 @@ function VehicleMissionRunner({
       phaseRef.current = 'idle'
       speedRef.current = 0
       updateSafetyVisual('normal')
-      if (root) registerVehicle(root, 0)
+      if (root) registerVehicle(root, 0, false)
       return
     }
     if (activeMissionIdRef.current === mission.id) return
@@ -294,6 +299,7 @@ function VehicleMissionRunner({
     dropDoneRef.current = false
     setCarrying(false)
     updateSafetyVisual('normal')
+    registerVehicle(root, 0, true)
     invalidate()
   }, [invalidate, layout, mission, ready, registerVehicle, updateSafetyVisual])
 
@@ -302,9 +308,12 @@ function VehicleMissionRunner({
     const carriage = carriageRef.current
     if (!initializedRef.current || !ready || !root || !carriage) return
 
-    registerVehicle(root, speedRef.current)
+    if (!mission || activeMissionIdRef.current !== mission.id) {
+      registerVehicle(root, 0, false)
+      return
+    }
 
-    if (!mission || activeMissionIdRef.current !== mission.id) return
+    registerVehicle(root, speedRef.current, true)
 
     if (isRuntimeVehicleFaulted(vehicle.id)) {
       speedRef.current = approachSpeed(
@@ -314,7 +323,7 @@ function VehicleMissionRunner({
         delta,
       )
       updateSafetyVisual('fault')
-      registerVehicle(root, speedRef.current)
+      registerVehicle(root, speedRef.current, true)
       if (speedRef.current > 0.01) invalidate()
       return
     }
@@ -366,7 +375,8 @@ function VehicleMissionRunner({
         lateralMargin: compact ? 0.18 : 0.25,
       })
       const safeTarget = Math.min(desiredSpeed, safety.safeSpeed)
-      const braking = Number.isFinite(safety.safeSpeed) && safeTarget < desiredSpeed - 0.08
+      const braking =
+        Number.isFinite(safety.safeSpeed) && safeTarget < desiredSpeed - 0.08
 
       speedRef.current = approachSpeed(
         speedRef.current,
@@ -379,7 +389,7 @@ function VehicleMissionRunner({
       distanceRef.current += speedRef.current * delta
       const sample = sampleRoute(route.points, route.lengths, distanceRef.current)
       placeVehicle(root, sample, turnResponsiveness, delta)
-      registerVehicle(root, speedRef.current)
+      registerVehicle(root, speedRef.current, true)
 
       if (sample.finished) {
         phaseRef.current = nextPhase
@@ -419,7 +429,7 @@ function VehicleMissionRunner({
       elapsedRef.current += delta
       const ratio = Math.min(1, elapsedRef.current / APPROACH_DURATION)
       interpolateVehicle(root, source.access, sourceAligned, ratio)
-      registerVehicle(root, 0.7)
+      registerVehicle(root, 0.7, true)
       if (ratio === 1) {
         phaseRef.current = 'pickup-attach'
         elapsedRef.current = 0
@@ -439,7 +449,7 @@ function VehicleMissionRunner({
       elapsedRef.current += delta
       const ratio = Math.min(1, elapsedRef.current / APPROACH_DURATION)
       interpolateVehicle(root, sourceAligned, source.access, ratio)
-      registerVehicle(root, 0.65)
+      registerVehicle(root, 0.65, true)
       if (ratio === 1) phaseRef.current = 'pickup-lower'
     } else if (phase === 'pickup-lower') {
       carriage.position.y = moveNumber(
@@ -485,7 +495,7 @@ function VehicleMissionRunner({
       elapsedRef.current += delta
       const ratio = Math.min(1, elapsedRef.current / APPROACH_DURATION)
       interpolateVehicle(root, destination.access, destinationAligned, ratio)
-      registerVehicle(root, 0.7)
+      registerVehicle(root, 0.7, true)
       if (ratio === 1) {
         phaseRef.current = 'drop-detach'
         elapsedRef.current = 0
@@ -505,7 +515,7 @@ function VehicleMissionRunner({
       elapsedRef.current += delta
       const ratio = Math.min(1, elapsedRef.current / APPROACH_DURATION)
       interpolateVehicle(root, destinationAligned, destination.access, ratio)
-      registerVehicle(root, 0.65)
+      registerVehicle(root, 0.65, true)
       if (ratio === 1) phaseRef.current = 'drop-lower'
     } else if (phase === 'drop-lower') {
       carriage.position.y = moveNumber(
@@ -529,7 +539,7 @@ function VehicleMissionRunner({
         activeMissionIdRef.current = null
         speedRef.current = 0
         updateSafetyVisual('normal')
-        registerVehicle(root, 0)
+        registerVehicle(root, 0, false)
         onComplete(vehicle, mission, pose)
       }
     }
@@ -752,11 +762,20 @@ export function FleetOperation({
             rotation={[0, stop.facing, 0]}
           >
             <mesh castShadow receiveShadow>
-              <boxGeometry args={[1.5, 0.14, 0.9]} />
+              <boxGeometry args={[1.5, PALLET_HEIGHT, 0.9]} />
               <meshStandardMaterial color="#8b5a2b" roughness={0.86} />
             </mesh>
-            <mesh position={[0, 0.57, 0]} castShadow>
-              <boxGeometry args={[1.4, 0.82, 0.82]} />
+            <mesh
+              position={[
+                0,
+                PALLET_HEIGHT / 2 +
+                  LOAD_SUPPORT_CLEARANCE +
+                  PALLET_LOAD_HEIGHT / 2,
+                0,
+              ]}
+              castShadow
+            >
+              <boxGeometry args={[1.4, PALLET_LOAD_HEIGHT, 0.82]} />
               <meshStandardMaterial
                 color={palletColors[palletId] ?? '#38bdf8'}
                 roughness={0.68}
