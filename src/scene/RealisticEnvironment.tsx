@@ -818,7 +818,7 @@ function FleetOperation({
   const [assignments, setAssignments] = useState<VehicleAssignmentMap>(() =>
     Object.fromEntries(plan.vehicles.map((vehicle) => [vehicle.id, null])),
   )
-  const [wave, setWave] = useState(0)
+  const [, setWave] = useState(0)
   const resetTimerRef = useRef<number | null>(null)
 
   const initialPoses = useMemo<Record<string, VehiclePose>>(() => {
@@ -837,7 +837,7 @@ function FleetOperation({
             },
       ]),
     )
-  }, [layout, locations, plan.vehicles, wave])
+  }, [layout, locations, plan.vehicles])
 
   useEffect(() => {
     setPalletStops({ ...plan.initialPalletStops })
@@ -947,7 +947,7 @@ function FleetOperation({
   )
 
   return (
-    <group key={`fleet-wave-${wave}`}>
+    <group>
       {plan.vehicles.map((vehicle) => {
         const missionId = assignments[vehicle.id]
         const mission = missionId
