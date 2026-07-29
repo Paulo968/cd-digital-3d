@@ -8,10 +8,13 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 
 - motor 3D otimizado com `InstancedMesh` para estruturas, posições, pallets e cargas;
 - modo operacional focado em leitura, consulta e análise;
-- modo realista com galpão, docas, pátio, caminhões e fila contínua de armazenagem, reabastecimento e expedição;
-- frota demonstrativa com duas empilhadeiras e uma transpaleteira no desktop;
+- modo realista com galpão, docas, pátio, caminhões e fila contínua de recebimento, armazenagem, reabastecimento e expedição;
+- frota demonstrativa com duas empilhadeiras e duas transpaleteiras no desktop;
 - perfil compacto com uma empilhadeira e uma transpaleteira, preservando o fluxo em celulares;
 - papéis separados para transporte de piso, armazenagem, reabastecimento e expedição;
+- controle preventivo de tráfego por reserva de corredores e cruzamentos antes do despacho;
+- missões com trajetos conflitantes aguardam, enquanto rotas independentes continuam em paralelo;
+- três posições de recebimento no desktop e seis posições visuais de carga dentro do caminhão;
 - pallets demonstrativos diferentes, coletados e depositados individualmente em espera, reserva, picking e carroceria;
 - tarefas dependentes: o próximo veículo só recebe o pallet depois da missão anterior terminar por completo;
 - posição e orientação persistentes da EMP-01 entre missões, modos e recarregamentos;
@@ -38,7 +41,9 @@ O 3D representa os dados carregados. Importação de ERP/WMS é tratada como inf
 
 A sequência heurística busca reduzir a distância em relação à ordem informada, mas não garante o ótimo global. Distâncias calculadas não representam tempo, produtividade ou economia financeira comprovados.
 
-A operação automática do modo realista é exclusivamente demonstrativa: não altera estoque, não gera evento e não representa comando de equipamento físico. A fila visual distribui pallets entre veículos compatíveis e mantém cada máquina onde concluiu a entrega, sem fabricar confirmação física.
+A operação automática do modo realista é exclusivamente demonstrativa: não altera estoque, não gera evento e não representa comando de equipamento físico. A fila visual distribui pallets entre veículos compatíveis, reserva previamente os trajetos e mantém cada máquina onde concluiu a entrega, sem fabricar confirmação física.
+
+O controle de tráfego atual é preventivo no despacho. Ele evita iniciar simultaneamente missões que compartilham células de circulação, mas ainda não substitui sensores, detecção dinâmica de obstáculos ou segurança de equipamentos físicos.
 
 ## Auditoria
 
