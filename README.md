@@ -8,8 +8,10 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 
 - motor 3D otimizado com `InstancedMesh` para estruturas, posições, pallets e cargas;
 - modo operacional focado em leitura, consulta e análise;
-- modo realista com galpão, docas, pátio, caminhões e ciclo visual de recebimento, armazenagem, reabastecimento e expedição;
-- um único pallet visual persistente no ciclo realista, coletado pelos garfos e depositado em reserva, picking e dentro da carroceria;
+- modo realista com galpão, docas, pátio, caminhões e fila contínua de armazenagem, reabastecimento e expedição;
+- pallets demonstrativos diferentes, coletados e depositados individualmente em reserva, picking e carroceria;
+- posição e orientação persistentes da EMP-01 entre missões, modos e recarregamentos;
+- pose de execução em memória para que novos comandos partam do ponto atual sem provocar re-renderização por quadro;
 - aceleração, frenagem, orientação progressiva e curvas arredondadas na movimentação dos veículos;
 - geometria compartilhada entre longarinas, pallets, cargas e garfos, evitando cargas visualmente flutuantes;
 - qualidade adaptativa para reduzir sombras, resolução e detalhes em celulares e dispositivos com ponteiro grosseiro;
@@ -31,7 +33,7 @@ O 3D representa os dados carregados. Importação de ERP/WMS é tratada como inf
 
 A sequência heurística busca reduzir a distância em relação à ordem informada, mas não garante o ótimo global. Distâncias calculadas não representam tempo, produtividade ou economia financeira comprovados.
 
-O ciclo automático do modo realista é exclusivamente demonstrativo: não altera estoque, não gera evento e não representa comando de equipamento físico. A animação usa um pallet persistente para representar a sequência operacional sem fabricar confirmação física.
+O ciclo automático do modo realista é exclusivamente demonstrativo: não altera estoque, não gera evento e não representa comando de equipamento físico. A fila visual movimenta pallets diferentes e mantém a EMP-01 no ponto onde concluiu cada entrega, sem fabricar confirmação física.
 
 ## Auditoria
 
