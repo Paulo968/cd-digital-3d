@@ -42,18 +42,21 @@ A arquitetura, os elementos, os limites e a estratégia responsiva do ambiente v
 ## Executar
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
+
+O `package-lock.json` é versionado para manter as mesmas versões de dependências no desenvolvimento, no CI e na publicação.
 
 ## Validar
 
 ```bash
 npm run lint
+npm run test
 npm run build
 ```
 
-Pull requests e branches `feat/**` ou `fix/**` executam automaticamente instalação, lint e build. A branch `main` continua responsável pela publicação no GitHub Pages.
+Pull requests e branches `feat/**` ou `fix/**` executam automaticamente instalação, lint, testes e build. A branch `main` continua responsável pela publicação no GitHub Pages.
 
 ## Licenciamento
 
