@@ -8,6 +8,8 @@ interface PalletJackModelProps {
   cargoColor?: string
   compact?: boolean
   accent?: string
+  emergencyBraking?: boolean
+  faulted?: boolean
 }
 
 export function PalletJackModel({
@@ -16,6 +18,8 @@ export function PalletJackModel({
   cargoColor = '#38bdf8',
   compact = false,
   accent = '#0ea5e9',
+  emergencyBraking = false,
+  faulted = false,
 }: PalletJackModelProps) {
   const internalCarriageRef = useRef<THREE.Group | null>(null)
   const resolvedCarriageRef = carriageRef ?? internalCarriageRef
@@ -35,6 +39,27 @@ export function PalletJackModel({
         <boxGeometry args={[0.72, 0.1, 0.1]} />
         <meshStandardMaterial color="#111827" roughness={0.76} />
       </mesh>
+
+      <mesh position={[0, 0.31, 0.81]}>
+        <boxGeometry args={[0.34, 0.1, 0.04]} />
+        <meshStandardMaterial
+          color={emergencyBraking || faulted ? '#ef4444' : '#450a0a'}
+          emissive={emergencyBraking || faulted ? '#ef4444' : '#000000'}
+          emissiveIntensity={emergencyBraking || faulted ? 3 : 0}
+          roughness={0.4}
+        />
+      </mesh>
+
+      {faulted && (
+        <mesh position={[0, 1.48, 0.68]}>
+          <cylinderGeometry args={[0.1, 0.1, 0.16, compact ? 8 : 12]} />
+          <meshStandardMaterial
+            color="#f59e0b"
+            emissive="#f59e0b"
+            emissiveIntensity={2.6}
+          />
+        </mesh>
+      )}
 
       {[-0.28, 0.28].map((x) => (
         <mesh
