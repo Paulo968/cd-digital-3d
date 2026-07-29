@@ -11,9 +11,17 @@ import {
 import * as THREE from 'three'
 import type { WarehouseLayout } from '../domain/layout'
 import { getLocationWorldPoint, type RoutePlan } from '../domain/routePlanning'
+import {
+  findLocationRow,
+  getLoadCenterY,
+  getLocationSupportY,
+  getPalletCenterY,
+  PALLET_HEIGHT,
+} from '../domain/warehouseGeometry'
 import type { SlotStatus, WarehouseLocation } from '../domain/warehouse'
 import type { RenderMode } from '../store/digitalTwinStore'
 import { usePalletTransferSimulationStore } from '../store/palletTransferSimulationStore'
+import { ForkliftModel } from './ForkliftModel'
 import {
   EMPTY_TRANSFER_VISUAL,
   PalletTransferVehicle,
@@ -21,6 +29,14 @@ import {
   type PalletTransferVisualState,
 } from './PalletTransferVehicle'
 import { RealisticEnvironment } from './RealisticEnvironment'
+import {
+  approachSpeed,
+  placeVehicle,
+  roundPathCorners,
+  routeDistance,
+  routeLengths,
+  sampleRoute,
+} from './vehicleMotion'
 
 const STATUS_COLOR: Record<SlotStatus, string> = {
   occupied: '#38bdf8',
@@ -40,6 +56,7 @@ const PRODUCT_COLORS = [
 ]
 const DEFAULT_CAMERA = new THREE.Vector3(34, 30, 42)
 const DEFAULT_TARGET = new THREE.Vector3(0, 3, 0)
+const INSTANCE_DUMMY = new THREE.Object3D()
 
 interface SceneProfile {
   compact: boolean
@@ -98,12 +115,11 @@ function configureInstance(
   color?: THREE.Color,
 ): void {
   if (!mesh) return
-  const dummy = new THREE.Object3D()
-  dummy.position.copy(position)
-  dummy.rotation.y = rotationY
-  dummy.scale.set(...scale)
-  dummy.updateMatrix()
-  mesh.setMatrixAt(index, dummy.matrix)
+  INSTANCE_DUMMY.position.copy(position)
+  INSTANCE_DUMMY.rotation.set(0, rotationY, 0)
+  INSTANCE_DUMMY.scale.set(...scale)
+  INSTANCE_DUMMY.updateMatrix()
+  mesh.setMatrixAt(index, INSTANCE_DUMMY.matrix)
   if (color) mesh.setColorAt(index, color)
 }
 
@@ -210,12 +226,14 @@ function SlotInstances({
   locations,
   selectedAddress,
   hiddenAddress,
+  reducedMotion,
   onSelect,
 }: {
   layout: WarehouseLayout
   locations: WarehouseLocation[]
   selectedAddress: string | null
   hiddenAddress?: string
+  reducedMotion: boolean
   onSelect: (address: string) => void
 }) {
   const slotRef = useRef<THREE.InstancedMesh | null>(null)
@@ -236,18 +254,20 @@ function SlotInstances({
   useLayoutEffect(() => {
     if (slotRef.current) {
       locations.forEach((location, index) => {
-        const row = layout.rackRows.find(
-          (item) => item.id === location.rackRowId,
-        )
+        const row = findLocationRow(layout, location)
         if (!row) return
         const point = getLocationWorldPoint(layout, location)
-        const position = new THREE.Vector3(point.x, point.y - 0.52, point.z)
+        const position = new THREE.Vector3(
+          point.x,
+          getLocationSupportY(layout, location) - 0.025,
+          point.z,
+        )
         configureInstance(
           slotRef.current,
           index,
           position,
           row.rotationY,
-          [row.bayWidth * 0.84, 0.08, row.rackDepth * 0.82],
+          [row.bayWidth * 0.84, 0.05, row.rackDepth * 0.82],
           new THREE.Color(STATUS_COLOR[location.status]),
         )
       })
@@ -259,29 +279,29 @@ function SlotInstances({
 
     if (loadRef.current && palletRef.current) {
       occupied.forEach((location, index) => {
-        const row = layout.rackRows.find(
-          (item) => item.id === location.rackRowId,
-        )
+        const row = findLocationRow(layout, location)
         if (!row) return
-        const basePoint = getLocationWorldPoint(layout, location)
-        const base = new THREE.Vector3(basePoint.x, basePoint.y, basePoint.z)
+        const point = getLocationWorldPoint(layout, location)
         const loadHeight = location.zone === 'picking' ? 0.58 : 0.92
-        const pallet = base.clone()
-        pallet.y -= 0.42
         configureInstance(
           palletRef.current,
           index,
-          pallet,
+          new THREE.Vector3(
+            point.x,
+            getPalletCenterY(layout, location),
+            point.z,
+          ),
           row.rotationY,
-          [row.bayWidth * 0.76, 0.12, row.rackDepth * 0.76],
+          [row.bayWidth * 0.76, PALLET_HEIGHT, row.rackDepth * 0.76],
         )
-        const load = base.clone()
-        load.y =
-          -0.29 + loadHeight / 2 + (location.level - 0.5) * row.levelHeight + 0.25
         configureInstance(
           loadRef.current,
           index,
-          load,
+          new THREE.Vector3(
+            point.x,
+            getLoadCenterY(layout, location, loadHeight),
+            point.z,
+          ),
           row.rotationY,
           [row.bayWidth * 0.69, loadHeight, row.rackDepth * 0.69],
           productColor(location),
@@ -295,6 +315,10 @@ function SlotInstances({
     }
     invalidate()
   }, [invalidate, layout, locations, occupied])
+
+  const selected = locations.find(
+    (location) => location.address === selectedAddress,
+  )
 
   return (
     <>
@@ -341,12 +365,11 @@ function SlotInstances({
         <boxGeometry args={[1, 1, 1]} />
         <meshStandardMaterial vertexColors roughness={0.68} />
       </instancedMesh>
-      {selectedAddress && (
+      {selected && (
         <SelectedBeacon
           layout={layout}
-          location={locations.find(
-            (location) => location.address === selectedAddress,
-          )}
+          location={selected}
+          reducedMotion={reducedMotion}
         />
       )}
     </>
@@ -356,40 +379,40 @@ function SlotInstances({
 function SelectedBeacon({
   layout,
   location,
+  reducedMotion,
 }: {
   layout: WarehouseLayout
-  location?: WarehouseLocation
+  location: WarehouseLocation
+  reducedMotion: boolean
 }) {
   const ringRef = useRef<THREE.Mesh | null>(null)
   const { invalidate } = useThree()
 
   useFrame(({ clock }) => {
-    if (!ringRef.current) return
+    if (!ringRef.current || reducedMotion) return
     const pulse = 1 + Math.sin(clock.elapsedTime * 4.2) * 0.12
     ringRef.current.scale.setScalar(pulse)
     ringRef.current.rotation.z += 0.012
     invalidate()
   })
 
-  if (!location) return null
-  const position = getLocationWorldPoint(layout, location)
+  const point = getLocationWorldPoint(layout, location)
+  const supportY = getLocationSupportY(layout, location)
 
   return (
-    <group position={[position.x, position.y, position.z]}>
-      <mesh
-        ref={ringRef}
-        position={[0, -0.53, 0]}
-        rotation={[Math.PI / 2, 0, 0]}
-      >
+    <group position={[point.x, supportY, point.z]}>
+      <mesh ref={ringRef} rotation={[Math.PI / 2, 0, 0]}>
         <torusGeometry args={[0.9, 0.055, 10, 36]} />
         <meshBasicMaterial color={STATUS_COLOR[location.status]} />
       </mesh>
-      <pointLight
-        position={[0, 0.5, 0]}
-        color={STATUS_COLOR[location.status]}
-        intensity={2}
-        distance={5}
-      />
+      {!reducedMotion && (
+        <pointLight
+          position={[0, 0.5, 0]}
+          color={STATUS_COLOR[location.status]}
+          intensity={2}
+          distance={5}
+        />
+      )}
       <Billboard position={[0, 1.4, 0]}>
         <mesh position={[0, 0, -0.02]}>
           <planeGeometry args={[2.35, 0.62]} />
@@ -503,30 +526,28 @@ function FloorAndZones({
 function RouteForklift({
   plan,
   runToken,
+  compact,
 }: {
   plan: RoutePlan | null
   runToken: number
+  compact: boolean
 }) {
   const groupRef = useRef<THREE.Group | null>(null)
-  const progress = useRef(0)
-  const running = useRef(false)
+  const progressRef = useRef(0)
+  const speedRef = useRef(0)
+  const runningRef = useRef(false)
   const { invalidate } = useThree()
-  const points = plan?.points ?? []
-  const lengths = useMemo(
-    () =>
-      points.slice(1).map((point, index) => {
-        return Math.hypot(
-          point.x - points[index].x,
-          point.z - points[index].z,
-        )
-      }),
-    [points],
+  const points = useMemo(
+    () => roundPathCorners(plan?.points ?? [], 0.9, 6),
+    [plan],
   )
-  const total = lengths.reduce((sum, value) => sum + value, 0)
+  const lengths = useMemo(() => routeLengths(points), [points])
+  const total = useMemo(() => routeDistance(lengths), [lengths])
 
   useEffect(() => {
-    progress.current = 0
-    running.current = Boolean(plan && points.length > 1)
+    progressRef.current = 0
+    speedRef.current = 0
+    runningRef.current = Boolean(plan && points.length > 1)
     if (groupRef.current && points[0]) {
       groupRef.current.position.set(points[0].x, 0.18, points[0].z)
     }
@@ -534,56 +555,22 @@ function RouteForklift({
   }, [invalidate, plan, points, runToken])
 
   useFrame((_, delta) => {
-    if (!running.current || !groupRef.current || !plan) return
-    progress.current += delta * 4.2
-    const distance = Math.min(progress.current, total)
-    let remaining = distance
-    let segment = 0
-
-    while (segment < lengths.length && remaining > lengths[segment]) {
-      remaining -= lengths[segment]
-      segment += 1
-    }
-
-    if (segment >= lengths.length) {
-      running.current = false
-      return
-    }
-
-    const from = points[segment]
-    const to = points[segment + 1]
-    const ratio = lengths[segment] === 0 ? 1 : remaining / lengths[segment]
-    groupRef.current.position.set(
-      THREE.MathUtils.lerp(from.x, to.x, ratio),
-      0.18,
-      THREE.MathUtils.lerp(from.z, to.z, ratio),
-    )
-    groupRef.current.rotation.y = Math.atan2(to.x - from.x, to.z - from.z)
+    if (!runningRef.current || !groupRef.current || !plan) return
+    const remaining = Math.max(0, total - progressRef.current)
+    const targetSpeed = Math.min(4.2, Math.sqrt(Math.max(0, 2 * 5 * remaining)))
+    speedRef.current = approachSpeed(speedRef.current, targetSpeed, 4, delta)
+    progressRef.current += delta * speedRef.current
+    const sample = sampleRoute(points, lengths, progressRef.current)
+    placeVehicle(groupRef.current, sample, 8, delta)
+    if (sample.finished) runningRef.current = false
     invalidate()
   })
 
+  if (!plan || points.length === 0) return null
+
   return (
     <group ref={groupRef}>
-      <mesh position={[0, 0.35, 0]} castShadow>
-        <boxGeometry args={[1.15, 0.65, 1.6]} />
-        <meshStandardMaterial color="#f59e0b" />
-      </mesh>
-      <mesh position={[0, 0.95, 0.15]} castShadow>
-        <boxGeometry args={[0.85, 0.75, 0.9]} />
-        <meshStandardMaterial color="#1f2937" />
-      </mesh>
-      <mesh position={[0, 0.9, -0.9]}>
-        <boxGeometry args={[0.12, 1.8, 0.12]} />
-        <meshStandardMaterial color="#334155" metalness={0.6} />
-      </mesh>
-      <mesh position={[-0.28, 0.18, -1.35]}>
-        <boxGeometry args={[0.12, 0.08, 1.35]} />
-        <meshStandardMaterial color="#475569" metalness={0.7} />
-      </mesh>
-      <mesh position={[0.28, 0.18, -1.35]}>
-        <boxGeometry args={[0.12, 0.08, 1.35]} />
-        <meshStandardMaterial color="#475569" metalness={0.7} />
-      </mesh>
+      <ForkliftModel compact={compact} />
     </group>
   )
 }
@@ -607,10 +594,15 @@ function CameraRig({
   useEffect(() => {
     if (selected) {
       const point = getLocationWorldPoint(layout, selected)
-      desiredTarget.current.set(point.x, point.y, point.z)
+      const targetY = getLoadCenterY(
+        layout,
+        selected,
+        selected.zone === 'picking' ? 0.58 : 0.92,
+      )
+      desiredTarget.current.set(point.x, targetY, point.z)
       desiredCamera.current.set(
         point.x + 5,
-        Math.max(point.y + 3.2, 4.2),
+        Math.max(targetY + 3.2, 4.2),
         point.z + 5,
       )
       animating.current = true
@@ -678,15 +670,9 @@ export function WarehouseScene({
   onSelect: (address: string | null) => void
 }) {
   const profile = useSceneProfile()
-  const transfer = usePalletTransferSimulationStore(
-    (state) => state.simulation,
-  )
-  const transferRunToken = usePalletTransferSimulationStore(
-    (state) => state.runToken,
-  )
-  const completeTransfer = usePalletTransferSimulationStore(
-    (state) => state.complete,
-  )
+  const transfer = usePalletTransferSimulationStore((state) => state.simulation)
+  const transferRunToken = usePalletTransferSimulationStore((state) => state.runToken)
+  const completeTransfer = usePalletTransferSimulationStore((state) => state.complete)
   const [transferVisual, setTransferVisual] =
     useState<PalletTransferVisualState>(EMPTY_TRANSFER_VISUAL)
   const visibleLocations = useMemo(
@@ -700,9 +686,7 @@ export function WarehouseScene({
     ? locations.find((location) => location.address === transfer.sourceAddress)
     : undefined
   const destination = transfer
-    ? locations.find(
-        (location) => location.address === transfer.destinationAddress,
-      )
+    ? locations.find((location) => location.address === transfer.destinationAddress)
     : undefined
   const routeLinePoints =
     !transfer && routePlan
@@ -783,6 +767,7 @@ export function WarehouseScene({
         hiddenAddress={
           transferVisual.hiddenSource ? transfer?.sourceAddress : undefined
         }
+        reducedMotion={profile.reducedMotion}
         onSelect={(address) => onSelect(address)}
       />
       <AisleLabels layout={layout} />
@@ -811,7 +796,13 @@ export function WarehouseScene({
         <Line points={loadedTransferLine} color="#0284c7" lineWidth={3.5} />
       )}
 
-      {!transfer && <RouteForklift plan={routePlan} runToken={routeRunToken} />}
+      {!transfer && (
+        <RouteForklift
+          plan={routePlan}
+          runToken={routeRunToken}
+          compact={profile.compact}
+        />
+      )}
       {transfer && (
         <PalletTransferVehicle
           simulation={transfer}
