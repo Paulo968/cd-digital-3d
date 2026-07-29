@@ -7,6 +7,10 @@ import {
   type WorldPoint,
 } from '../domain/routePlanning'
 import type { WarehouseLocation } from '../domain/warehouse'
+import {
+  clearOperationalVehicleRuntimePose,
+  setOperationalVehicleRuntimePose,
+} from './operationalVehicleRuntime'
 
 export type OperationalVehicleAnchor =
   | { kind: 'shipping' }
@@ -80,22 +84,37 @@ export const useOperationalVehicleStore = create<OperationalVehicleState>()(
     (set) => ({
       vehicleId: 'EMP-01',
       anchor: { kind: 'shipping' },
-      parkAtAddress: (address) =>
-        set({ anchor: { kind: 'address', address: address.trim().toUpperCase() } }),
-      parkAtPoint: (point, label = 'Ponto operacional', facing = 0) =>
+      parkAtAddress: (address) => {
+        clearOperationalVehicleRuntimePose()
+        set({
+          anchor: {
+            kind: 'address',
+            address: address.trim().toUpperCase(),
+          },
+        })
+      },
+      parkAtPoint: (point, label = 'Ponto operacional', facing = 0) => {
+        const safePoint = {
+          x: safeCoordinate(point.x),
+          y: safeCoordinate(point.y, 0.2),
+          z: safeCoordinate(point.z),
+        }
+        const safeFacing = safeCoordinate(facing)
+        const safeLabel = label.trim() || 'Ponto operacional'
+        setOperationalVehicleRuntimePose(safePoint, safeFacing, safeLabel)
         set({
           anchor: {
             kind: 'point',
-            point: {
-              x: safeCoordinate(point.x),
-              y: safeCoordinate(point.y, 0.2),
-              z: safeCoordinate(point.z),
-            },
-            label: label.trim() || 'Ponto operacional',
-            facing: safeCoordinate(facing),
+            point: safePoint,
+            label: safeLabel,
+            facing: safeFacing,
           },
-        }),
-      resetToShipping: () => set({ anchor: { kind: 'shipping' } }),
+        })
+      },
+      resetToShipping: () => {
+        clearOperationalVehicleRuntimePose()
+        set({ anchor: { kind: 'shipping' } })
+      },
     }),
     {
       name: 'cd-digital-3d-operational-vehicle',
