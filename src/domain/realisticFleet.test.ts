@@ -67,6 +67,29 @@ describe('realisticFleet', () => {
     expect(readyAfterStaging.some((mission) => mission.id === 'putaway-1')).toBe(true)
   })
 
+  it('mantém o pallet bloqueado enquanto o veículo anterior ainda recua', () => {
+    const plan = buildRealisticFleetPlan(
+      DEFAULT_WAREHOUSE_LAYOUT,
+      locations,
+      geometry,
+      false,
+    )
+    const statuses = createMissionStatuses(plan.missions)
+    const stagedStops = {
+      ...plan.initialPalletStops,
+      'DEMO-IN-01': plan.missions.find((mission) => mission.id === 'putaway-1')!
+        .source,
+    }
+
+    statuses['inbound-transfer-1'] = 'running'
+    const whileRunning = readyMissions(plan.missions, statuses, stagedStops)
+    expect(whileRunning.some((mission) => mission.id === 'putaway-1')).toBe(false)
+
+    statuses['inbound-transfer-1'] = 'completed'
+    const afterCompletion = readyMissions(plan.missions, statuses, stagedStops)
+    expect(afterCompletion.some((mission) => mission.id === 'putaway-1')).toBe(true)
+  })
+
   it('não entrega missão de elevação para a transpaleteira', () => {
     const plan = buildRealisticFleetPlan(
       DEFAULT_WAREHOUSE_LAYOUT,
