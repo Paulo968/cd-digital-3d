@@ -26,7 +26,7 @@ describe('dynamicSafety', () => {
         {
           id: 'person-1',
           kind: 'person',
-          point: { x: 0, y: 0.2, z: -2.2 },
+          point: { x: 0, y: 0.2, z: 2.2 },
           radius: 0.35,
           active: true,
         },
@@ -45,7 +45,7 @@ describe('dynamicSafety', () => {
         {
           id: 'crate-1',
           kind: 'obstacle',
-          point: { x: 4, y: 0.2, z: -2 },
+          point: { x: 4, y: 0.2, z: 2 },
           radius: 0.65,
           active: true,
         },
@@ -63,7 +63,7 @@ describe('dynamicSafety', () => {
         {
           id: 'EMP-02',
           kind: 'vehicle',
-          point: { x: 0, y: 0.2, z: 3 },
+          point: { x: 0, y: 0.2, z: -3 },
           radius: 0.8,
           active: true,
         },
@@ -80,14 +80,14 @@ describe('dynamicSafety', () => {
         {
           id: 'far',
           kind: 'vehicle',
-          point: { x: 0, y: 0.2, z: -8 },
+          point: { x: 0, y: 0.2, z: 8 },
           radius: 0.8,
           active: true,
         },
         {
           id: 'near',
           kind: 'obstacle',
-          point: { x: 0.1, y: 0.2, z: -3 },
+          point: { x: 0.1, y: 0.2, z: 3 },
           radius: 0.6,
           active: true,
         },
