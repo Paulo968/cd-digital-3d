@@ -9,12 +9,17 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 - motor 3D otimizado com `InstancedMesh` para estruturas, posições, pallets e cargas;
 - modo operacional focado em leitura, consulta e análise;
 - modo realista com galpão, docas, pátio, caminhões e fila contínua de armazenagem, reabastecimento e expedição;
-- pallets demonstrativos diferentes, coletados e depositados individualmente em reserva, picking e carroceria;
+- frota demonstrativa com duas empilhadeiras e uma transpaleteira no desktop;
+- perfil compacto com uma empilhadeira e uma transpaleteira, preservando o fluxo em celulares;
+- papéis separados para transporte de piso, armazenagem, reabastecimento e expedição;
+- pallets demonstrativos diferentes, coletados e depositados individualmente em espera, reserva, picking e carroceria;
+- tarefas dependentes: o próximo veículo só recebe o pallet depois da missão anterior terminar por completo;
 - posição e orientação persistentes da EMP-01 entre missões, modos e recarregamentos;
+- veículos mantêm o ponto final ao iniciar novas ondas de operação, sem retorno automático ao começo;
 - pose de execução em memória para que novos comandos partam do ponto atual sem provocar re-renderização por quadro;
 - aceleração, frenagem, orientação progressiva e curvas arredondadas na movimentação dos veículos;
 - geometria compartilhada entre longarinas, pallets, cargas e garfos, evitando cargas visualmente flutuantes;
-- qualidade adaptativa para reduzir sombras, resolução e detalhes em celulares e dispositivos com ponteiro grosseiro;
+- qualidade adaptativa para reduzir sombras, resolução, veículos e detalhes em celulares e dispositivos com ponteiro grosseiro;
 - construtor guiado de layouts regulares;
 - proteção de estoque em alterações compatíveis de layout;
 - importação CSV validada contra o layout ativo;
@@ -33,7 +38,7 @@ O 3D representa os dados carregados. Importação de ERP/WMS é tratada como inf
 
 A sequência heurística busca reduzir a distância em relação à ordem informada, mas não garante o ótimo global. Distâncias calculadas não representam tempo, produtividade ou economia financeira comprovados.
 
-O ciclo automático do modo realista é exclusivamente demonstrativo: não altera estoque, não gera evento e não representa comando de equipamento físico. A fila visual movimenta pallets diferentes e mantém a EMP-01 no ponto onde concluiu cada entrega, sem fabricar confirmação física.
+A operação automática do modo realista é exclusivamente demonstrativa: não altera estoque, não gera evento e não representa comando de equipamento físico. A fila visual distribui pallets entre veículos compatíveis e mantém cada máquina onde concluiu a entrega, sem fabricar confirmação física.
 
 ## Auditoria
 
