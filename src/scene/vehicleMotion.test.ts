@@ -31,13 +31,16 @@ describe('vehicleMotion', () => {
     expect(containsSharpCorner).toBe(false)
   })
 
-  it('finaliza exatamente no último ponto da rota', () => {
+  it('finaliza no último ponto da rota dentro da precisão numérica', () => {
     const rounded = roundPathCorners(path, 1, 6)
     const lengths = routeLengths(rounded)
     const total = routeDistance(lengths)
     const sample = sampleRoute(rounded, lengths, total)
+    const expected = path.at(-1)!
 
     expect(sample.finished).toBe(true)
-    expect(sample.point).toEqual(path.at(-1))
+    expect(sample.point.x).toBeCloseTo(expected.x, 10)
+    expect(sample.point.y).toBeCloseTo(expected.y, 10)
+    expect(sample.point.z).toBeCloseTo(expected.z, 10)
   })
 })
