@@ -13,7 +13,8 @@ O modo operacional continua sendo a visão principal para consulta, rastreabilid
 - pátio externo;
 - duas docas visuais vinculadas às zonas de recebimento e expedição;
 - caminhões simplificados com carroceria aberta;
-- posição visual de carga dentro do caminhão;
+- posições visuais de carga dentro do caminhão;
+- plataformas baixas de recebimento compatíveis com a altura dos garfos;
 - defensas, faixas de segurança e luminárias;
 - vigas superiores sem cobertura opaca, preservando a leitura do CD pela câmera.
 
@@ -23,7 +24,7 @@ Todos os elementos usam geometrias primitivas e materiais compartilháveis. Não
 
 Longarinas, pallet, carga e garfos usam uma referência vertical comum:
 
-1. a superfície superior da longarina define o apoio;
+1. a superfície superior da longarina, plataforma ou carroceria define o apoio;
 2. o pallet recebe apenas uma pequena folga técnica sobre esse apoio;
 3. a carga começa sobre a face superior do pallet;
 4. a altura dos garfos é calculada para entrar abaixo do pallet;
@@ -31,25 +32,45 @@ Longarinas, pallet, carga e garfos usam uma referência vertical comum:
 
 Essa regra elimina o efeito de pallet flutuando sem comprometer a elevação dos garfos.
 
-## Ciclo operacional demonstrativo
+## Posição persistente da empilhadeira
 
-Uma empilhadeira visual e um único pallet persistente executam continuamente:
+A EMP-01 possui duas representações complementares de posição:
 
-1. **Recebimento** — a empilhadeira alinha, eleva os garfos, coleta o pallet e recua.
-2. **Armazenagem** — transporta o mesmo pallet e o deposita em uma posição de reserva.
-3. **Reabastecimento** — recolhe o mesmo pallet da reserva e o leva ao picking.
-4. **Expedição** — recolhe o pallet do picking, entra alinhada na doca e o deposita dentro da carroceria.
-5. **Retorno** — volta vazia ao recebimento antes de iniciar um novo ciclo demonstrativo.
+- **posição persistida** — salva o último ponto concluído e sobrevive à troca de abas, modos e recarregamento da página;
+- **pose de execução** — guarda coordenada e orientação atuais durante o movimento, sem atualizar Zustand ou React por quadro.
 
-O pallet não é recriado em cada etapa. O mesmo objeto 3D alterna entre repouso na estrutura e acoplamento cinemático aos garfos.
+Quando uma nova transferência é solicitada, a rota é recalculada no instante do comando usando a pose de execução mais recente. A empilhadeira não volta automaticamente à expedição e não reaparece no centro do galpão.
+
+Ao terminar uma entrega, a posição após o recuo vira a origem da missão seguinte.
+
+## Fila operacional demonstrativa
+
+O modo realista não usa mais um único pallet atravessando todas as etapas. A fila alterna unidades diferentes e executa missões independentes:
+
+1. **Armazenagem** — um pallet do recebimento é levado para uma posição de reserva.
+2. **Reabastecimento** — outro pallet é retirado de uma posição de reserva e levado ao picking.
+3. **Expedição** — outro pallet sai do picking e é colocado dentro do caminhão.
+4. **Nova armazenagem** — a empilhadeira sai da última entrega e busca outro pallet no recebimento.
+5. **Continuidade** — pallets deixados em reserva ou picking podem ser recolhidos em uma missão posterior.
+
+Depois de cada depósito, a EMP-01:
+
+1. desacopla o pallet;
+2. recua;
+3. baixa os garfos para a altura de transporte;
+4. permanece no ponto onde terminou;
+5. calcula a rota vazia até a próxima origem;
+6. segue o trajeto completo antes de iniciar a coleta.
+
+Ao final de uma onda demonstrativa, novos pallets são preparados nas posições iniciais, mas a empilhadeira continua onde parou e percorre fisicamente o caminho até a primeira origem da onda seguinte.
 
 O ciclo é exclusivamente visual:
 
-- não altera estoque;
+- não altera estoque oficial;
 - não gera evento de rastreabilidade;
 - não confirma movimentação física;
 - não substitui a simulação manual de pallet;
-- pausa quando existe uma rota manual ou transferência visual ativa;
+- desaparece quando existe uma rota manual ou transferência visual ativa, evitando empilhadeiras duplicadas;
 - respeita `prefers-reduced-motion`.
 
 ## Movimento dos veículos
@@ -62,7 +83,8 @@ As rotas continuam derivadas da geometria simplificada do layout, porém a repro
 - frenagem antes do destino;
 - velocidade menor com carga;
 - aproximação e recuo controlados;
-- altura de transporte separada da altura de coleta.
+- altura de transporte separada da altura de coleta;
+- continuidade entre a posição final e a próxima rota vazia.
 
 Não foi adicionada física pesada. O modelo cinemático é determinístico, mais leve e mais adequado a uma demonstração logística em navegador.
 
@@ -89,7 +111,7 @@ Não foi adicionada física pesada. O modelo cinemático é determinístico, mai
 
 - `frameloop="demand"` permanece ativo;
 - componentes animados chamam `invalidate()` apenas enquanto estão em movimento;
-- nenhum estado por frame passa pelo Zustand ou força re-renderização ampla do React;
+- a pose por quadro fica em uma variável de runtime, fora do Zustand e do React;
 - o modo operacional não monta os elementos realistas;
 - o marcador de seleção deixa de animar quando há preferência por movimento reduzido;
 - objetos auxiliares de `InstancedMesh` são reutilizados para reduzir alocações;

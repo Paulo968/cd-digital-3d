@@ -1,6 +1,10 @@
 import { create } from 'zustand'
-import type { PalletTransferSimulation } from '../domain/palletTransferSimulation'
+import {
+  buildPalletTransferSimulation,
+  type PalletTransferSimulation,
+} from '../domain/palletTransferSimulation'
 import { useDigitalTwinStore, type ActionResult } from './digitalTwinStore'
+import { getOperationalVehicleRuntimePose } from './operationalVehicleRuntime'
 import { useOperationalVehicleStore } from './operationalVehicleStore'
 
 export type PalletTransferStatus = 'idle' | 'running' | 'completed'
@@ -52,27 +56,69 @@ function identityStillMatches(
   return { ok: true, message: 'Simulação validada.' }
 }
 
+function rebuildFromRuntimePose(
+  simulation: PalletTransferSimulation,
+): PalletTransferSimulation {
+  const runtimePose = getOperationalVehicleRuntimePose()
+  if (!runtimePose) return simulation
+
+  const twin = useDigitalTwinStore.getState()
+  const source = twin.locations.find(
+    (location) => location.address === simulation.sourceAddress,
+  )
+  const destination = twin.locations.find(
+    (location) => location.address === simulation.destinationAddress,
+  )
+  if (!source || !destination) return simulation
+
+  return buildPalletTransferSimulation(
+    twin.layout,
+    source,
+    destination,
+    twin.blockedCrossAisles,
+    runtimePose.point,
+  )
+}
+
 export const usePalletTransferSimulationStore =
   create<PalletTransferSimulationState>((set, get) => ({
     simulation: null,
     status: 'idle',
     runToken: 0,
     start: (simulation) => {
-      const validation = identityStillMatches(simulation)
+      const effectiveSimulation = rebuildFromRuntimePose(simulation)
+      const validation = identityStillMatches(effectiveSimulation)
       if (!validation.ok) return validation
 
       useDigitalTwinStore.getState().setRoutePlan(null)
       set((state) => ({
-        simulation,
+        simulation: effectiveSimulation,
         status: 'running',
         runToken: state.runToken + 1,
       }))
       return {
         ok: true,
-        message: `Transporte simulado iniciado: ${simulation.sourceAddress} → ${simulation.destinationAddress}.`,
+        message: `Transporte simulado iniciado da posição atual da EMP-01: ${effectiveSimulation.sourceAddress} → ${effectiveSimulation.destinationAddress}.`,
       }
     },
-    complete: () => set({ status: 'completed' }),
+    complete: () => {
+      const simulation = get().simulation
+      const destinationPoint = simulation?.loadedPoints.at(-1)
+
+      if (simulation && destinationPoint) {
+        useOperationalVehicleStore.getState().parkAtPoint(
+          destinationPoint,
+          `Ao lado de ${simulation.destinationAddress}`,
+          simulation.destinationFacing,
+        )
+      } else if (simulation) {
+        useOperationalVehicleStore
+          .getState()
+          .parkAtAddress(simulation.destinationAddress)
+      }
+
+      set({ status: 'completed' })
+    },
     clear: () => set({ simulation: null, status: 'idle' }),
     applyToScenario: () => {
       const simulation = get().simulation
@@ -94,9 +140,6 @@ export const usePalletTransferSimulationStore =
       })
 
       if (result.ok) {
-        useOperationalVehicleStore
-          .getState()
-          .parkAtAddress(simulation.destinationAddress)
         set({ simulation: null, status: 'idle' })
       }
 
@@ -104,7 +147,7 @@ export const usePalletTransferSimulationStore =
         ? {
             ok: true,
             message:
-              'Movimentação aplicada ao cenário sistêmico. A EMP-01 ficou estacionada no destino, sem confirmação física.',
+              'Movimentação aplicada ao cenário sistêmico. A EMP-01 permanece estacionada exatamente onde concluiu a entrega, sem confirmação física.',
           }
         : result
     },

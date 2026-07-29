@@ -1,6 +1,8 @@
+import { useFrame } from '@react-three/fiber'
 import { useRef, type MutableRefObject } from 'react'
 import * as THREE from 'three'
 import { FORK_THICKNESS, TRAVEL_FORK_HEIGHT } from '../domain/warehouseGeometry'
+import { setOperationalVehicleRuntimePose } from '../store/operationalVehicleRuntime'
 
 interface ForkliftModelProps {
   carriageRef?: MutableRefObject<THREE.Group | null>
@@ -8,7 +10,12 @@ interface ForkliftModelProps {
   cargoVisible?: boolean
   cargoColor?: string
   compact?: boolean
+  reportRuntimePose?: boolean
 }
+
+const WORLD_POSITION = new THREE.Vector3()
+const WORLD_QUATERNION = new THREE.Quaternion()
+const WORLD_EULER = new THREE.Euler(0, 0, 0, 'YXZ')
 
 export function ForkliftModel({
   carriageRef,
@@ -16,13 +23,29 @@ export function ForkliftModel({
   cargoVisible = false,
   cargoColor = '#38bdf8',
   compact = false,
+  reportRuntimePose = true,
 }: ForkliftModelProps) {
+  const rootRef = useRef<THREE.Group | null>(null)
   const internalCarriageRef = useRef<THREE.Group | null>(null)
   const resolvedCarriageRef = carriageRef ?? internalCarriageRef
   const wheelSegments = compact ? 10 : 16
 
+  useFrame(() => {
+    const root = rootRef.current
+    if (!reportRuntimePose || !root || !root.visible) return
+
+    root.getWorldPosition(WORLD_POSITION)
+    root.getWorldQuaternion(WORLD_QUATERNION)
+    WORLD_EULER.setFromQuaternion(WORLD_QUATERNION, 'YXZ')
+    setOperationalVehicleRuntimePose(
+      { x: WORLD_POSITION.x, y: 0.2, z: WORLD_POSITION.z },
+      WORLD_EULER.y,
+      'EMP-01 em execução',
+    )
+  })
+
   return (
-    <group>
+    <group ref={rootRef}>
       <mesh position={[0, 0.35, 0]} castShadow>
         <boxGeometry args={[1.15, 0.65, 1.6]} />
         <meshStandardMaterial color="#f59e0b" roughness={0.52} />

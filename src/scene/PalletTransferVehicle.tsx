@@ -1,5 +1,5 @@
 import { useFrame, useThree } from '@react-three/fiber'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import type { WarehouseLayout } from '../domain/layout'
 import type { PalletTransferSimulation } from '../domain/palletTransferSimulation'
@@ -99,7 +99,10 @@ function safeTargetSpeed(
   maximumSpeed: number,
   remainingDistance: number,
 ): number {
-  return Math.min(maximumSpeed, Math.sqrt(Math.max(0, 2 * BRAKING * remainingDistance)))
+  return Math.min(
+    maximumSpeed,
+    Math.sqrt(Math.max(0, 2 * BRAKING * remainingDistance)),
+  )
 }
 
 export function PalletTransferVehicle({
@@ -127,6 +130,7 @@ export function PalletTransferVehicle({
   const pickupDoneRef = useRef(false)
   const dropDoneRef = useRef(false)
   const [cargoVisible, setCargoVisible] = useState(false)
+  const [ready, setReady] = useState(false)
   const { invalidate } = useThree()
 
   const emptyPoints = useMemo(
@@ -159,7 +163,7 @@ export function PalletTransferVehicle({
       )
     : 2.4
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       !simulation ||
       runToken <= 0 ||
@@ -168,13 +172,19 @@ export function PalletTransferVehicle({
       !vehicleRef.current ||
       !carriageRef.current
     ) {
+      setReady(false)
       return
     }
 
     const first = emptyPoints[0]
-    if (!first) return
+    if (!first) {
+      setReady(false)
+      return
+    }
 
+    setReady(false)
     vehicleRef.current.position.set(first.x, 0.18, first.z)
+    vehicleRef.current.rotation.y = 0
     carriageRef.current.position.y = TRAVEL_FORK_HEIGHT
     phaseRef.current = 'going-to-source'
     stepRef.current = 0
@@ -189,6 +199,7 @@ export function PalletTransferVehicle({
       cargoAtDestination: false,
       phase: 'going-to-source',
     })
+    setReady(true)
     invalidate()
   }, [
     destination,
@@ -204,7 +215,7 @@ export function PalletTransferVehicle({
     const vehicle = vehicleRef.current
     const carriage = carriageRef.current
     const plan = simulation
-    if (!vehicle || !carriage || !plan) return
+    if (!ready || !vehicle || !carriage || !plan) return
 
     const enterPhase = (phase: PalletTransferPhase) => {
       phaseRef.current = phase
@@ -388,7 +399,7 @@ export function PalletTransferVehicle({
   })
 
   return (
-    <group ref={vehicleRef}>
+    <group ref={vehicleRef} visible={ready}>
       <ForkliftModel
         carriageRef={carriageRef}
         mastHeight={mastHeight}
@@ -419,11 +430,15 @@ export function SimulatedDestinationLoad({
   return (
     <group position={[point.x, 0, point.z]} rotation={[0, row.rotationY, 0]}>
       <mesh position={[0, palletY, 0]} castShadow>
-        <boxGeometry args={[row.bayWidth * 0.76, PALLET_HEIGHT, row.rackDepth * 0.76]} />
+        <boxGeometry
+          args={[row.bayWidth * 0.76, PALLET_HEIGHT, row.rackDepth * 0.76]}
+        />
         <meshStandardMaterial color="#8b5a2b" roughness={0.86} />
       </mesh>
       <mesh position={[0, loadY, 0]} castShadow>
-        <boxGeometry args={[row.bayWidth * 0.69, loadHeight, row.rackDepth * 0.69]} />
+        <boxGeometry
+          args={[row.bayWidth * 0.69, loadHeight, row.rackDepth * 0.69]}
+        />
         <meshStandardMaterial color={colorForSku(sku)} roughness={0.68} />
       </mesh>
     </group>
