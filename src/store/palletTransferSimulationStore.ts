@@ -72,7 +72,24 @@ export const usePalletTransferSimulationStore =
         message: `Transporte simulado iniciado: ${simulation.sourceAddress} → ${simulation.destinationAddress}.`,
       }
     },
-    complete: () => set({ status: 'completed' }),
+    complete: () => {
+      const simulation = get().simulation
+      const destinationPoint = simulation?.loadedPoints.at(-1)
+
+      if (simulation && destinationPoint) {
+        useOperationalVehicleStore.getState().parkAtPoint(
+          destinationPoint,
+          `Ao lado de ${simulation.destinationAddress}`,
+          simulation.destinationFacing,
+        )
+      } else if (simulation) {
+        useOperationalVehicleStore
+          .getState()
+          .parkAtAddress(simulation.destinationAddress)
+      }
+
+      set({ status: 'completed' })
+    },
     clear: () => set({ simulation: null, status: 'idle' }),
     applyToScenario: () => {
       const simulation = get().simulation
@@ -94,9 +111,6 @@ export const usePalletTransferSimulationStore =
       })
 
       if (result.ok) {
-        useOperationalVehicleStore
-          .getState()
-          .parkAtAddress(simulation.destinationAddress)
         set({ simulation: null, status: 'idle' })
       }
 
@@ -104,7 +118,7 @@ export const usePalletTransferSimulationStore =
         ? {
             ok: true,
             message:
-              'Movimentação aplicada ao cenário sistêmico. A EMP-01 ficou estacionada no destino, sem confirmação física.',
+              'Movimentação aplicada ao cenário sistêmico. A EMP-01 permanece estacionada exatamente onde concluiu a entrega, sem confirmação física.',
           }
         : result
     },
