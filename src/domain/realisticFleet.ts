@@ -4,6 +4,7 @@ import type {
   RealisticMissionStop,
 } from './realisticMissionQueue'
 import {
+  buildTravelPath,
   getLocationAccessPoint,
   getLocationWorldPoint,
   type WorldPoint,
@@ -50,6 +51,7 @@ export interface FleetMission {
   eligibleKinds: FleetVehicleKind[]
   priority: number
   sequence: number
+  trafficCells: string[]
 }
 
 export interface RealisticFleetPlan {
@@ -61,6 +63,8 @@ export interface RealisticFleetPlan {
   truckStops: RealisticMissionStop[]
 }
 
+export const TRAFFIC_CELL_SIZE = 3.2
+
 const PALLET_COLORS = [
   '#38bdf8',
   '#34d399',
@@ -68,7 +72,11 @@ const PALLET_COLORS = [
   '#f472b6',
   '#a78bfa',
   '#22d3ee',
+  '#fb7185',
+  '#60a5fa',
 ]
+
+const missionTrafficRegistry = new Map<string, Set<string>>()
 
 function forkHeightForSupport(supportY: number): number {
   const palletBottom = supportY + PALLET_SUPPORT_CLEARANCE
@@ -139,11 +147,13 @@ function truckStop(
   geometry: RealisticDockGeometry,
 ): RealisticMissionStop {
   const supportY = 0.58
-  const xOffset = index === 0 ? -0.65 : 0.65
+  const column = index % 2
+  const row = Math.floor(index / 2)
+  const xOffset = column === 0 ? -0.65 : 0.65
   const restingPoint = {
     x: geometry.shippingX + xOffset,
     y: supportY + PALLET_SUPPORT_CLEARANCE + PALLET_HEIGHT / 2,
-    z: geometry.frontZ + 2.15,
+    z: geometry.frontZ + 2.15 + row * 1.15,
   }
 
   return {
@@ -212,50 +222,125 @@ function vehicleStart(
   }
 }
 
+export function trafficCellKey(
+  point: Pick<WorldPoint, 'x' | 'z'>,
+  cellSize = TRAFFIC_CELL_SIZE,
+): string {
+  return `${Math.round(point.x / cellSize)}:${Math.round(point.z / cellSize)}`
+}
+
+export function buildTrafficCells(
+  points: WorldPoint[],
+  cellSize = TRAFFIC_CELL_SIZE,
+): string[] {
+  if (points.length === 0) return []
+  const cells = new Set<string>()
+
+  for (let index = 0; index < points.length - 1; index += 1) {
+    const from = points[index]
+    const to = points[index + 1]
+    const distance = Math.hypot(to.x - from.x, to.z - from.z)
+    const steps = Math.max(1, Math.ceil(distance / (cellSize * 0.45)))
+
+    for (let step = 0; step <= steps; step += 1) {
+      const ratio = step / steps
+      cells.add(
+        trafficCellKey(
+          {
+            x: from.x + (to.x - from.x) * ratio,
+            z: from.z + (to.z - from.z) * ratio,
+          },
+          cellSize,
+        ),
+      )
+    }
+  }
+
+  if (points.length === 1) cells.add(trafficCellKey(points[0], cellSize))
+  return [...cells]
+}
+
+export function trafficCellsConflict(
+  left: Iterable<string>,
+  right: Iterable<string>,
+): boolean {
+  const rightSet = right instanceof Set ? right : new Set(right)
+  for (const cell of left) {
+    if (rightSet.has(cell)) return true
+  }
+  return false
+}
+
+function missionTrafficCells(
+  layout: WarehouseLayout,
+  source: RealisticMissionStop,
+  destination: RealisticMissionStop,
+): string[] {
+  let path: WorldPoint[]
+  try {
+    path = buildTravelPath(layout, source.access, destination.access, {
+      left: false,
+      right: false,
+    })
+  } catch {
+    path = [source.access, destination.access]
+  }
+
+  return buildTrafficCells(path)
+}
+
+function createMission(
+  layout: WarehouseLayout,
+  input: Omit<FleetMission, 'trafficCells'>,
+): FleetMission {
+  return {
+    ...input,
+    trafficCells: missionTrafficCells(layout, input.source, input.destination),
+  }
+}
+
+function registerMissionTraffic(missions: FleetMission[]): void {
+  missionTrafficRegistry.clear()
+  missions.forEach((mission) => {
+    missionTrafficRegistry.set(mission.id, new Set(mission.trafficCells))
+  })
+}
+
 export function buildRealisticFleetPlan(
   layout: WarehouseLayout,
   locations: WarehouseLocation[],
   geometry: RealisticDockGeometry,
   compact: boolean,
 ): RealisticFleetPlan {
-  const reserveLocations = preferredLocations(locations, 'reserve', 4)
-  const pickingLocations = preferredLocations(locations, 'picking', 3, {
+  const reserveLocations = preferredLocations(locations, 'reserve', 6)
+  const pickingLocations = preferredLocations(locations, 'picking', 4, {
     lowestLevelOnly: true,
   })
+  const inboundCount = compact ? 2 : 3
 
-  const receivingStops = [
-    floorStop(
-      'receiving:1',
-      'Recebimento 1',
-      geometry.receivingX - 0.9,
+  const receivingStops = Array.from({ length: inboundCount }, (_, index) => {
+    const offset = (index - (inboundCount - 1) / 2) * 1.8
+    return floorStop(
+      `receiving:${index + 1}`,
+      `Recebimento ${index + 1}`,
+      geometry.receivingX + offset,
       geometry.frontZ - 4,
       0,
-    ),
-    floorStop(
-      'receiving:2',
-      'Recebimento 2',
-      geometry.receivingX + 0.9,
-      geometry.frontZ - 4,
-      0,
-    ),
-  ]
-  const stagingStops = [
-    floorStop(
-      'staging:inbound:1',
-      'Espera de entrada 1',
-      geometry.receivingX - 2.1,
+    )
+  })
+  const stagingStops = Array.from({ length: inboundCount }, (_, index) => {
+    const offset = (index - (inboundCount - 1) / 2) * 2.05
+    return floorStop(
+      `staging:inbound:${index + 1}`,
+      `Espera de entrada ${index + 1}`,
+      geometry.receivingX + offset,
       geometry.frontZ - 8,
       0,
-    ),
-    floorStop(
-      'staging:inbound:2',
-      'Espera de entrada 2',
-      geometry.receivingX + 2.1,
-      geometry.frontZ - 8,
-      0,
-    ),
-  ]
-  const truckStops = [truckStop(0, geometry), truckStop(1, geometry)]
+    )
+  })
+  const truckStops = Array.from({ length: 6 }, (_, index) =>
+    truckStop(index, geometry),
+  )
 
   const vehicles = [
     vehicleStart(
@@ -286,26 +371,41 @@ export function buildRealisticFleetPlan(
       },
       -Math.PI / 2,
       0.94,
-      0.9,
+      0.75,
     ),
     vehicleStart(
       'TP-01',
-      'Transpaleteira elétrica',
+      'Transpaleteira elétrica de recebimento',
       'pallet-jack',
       ['inbound-transfer', 'shipping'],
       '#0ea5e9',
       {
-        x: geometry.receivingX,
+        x: geometry.receivingX - 1.8,
         y: 0.2,
         z: geometry.frontZ - 1.5,
       },
       Math.PI,
       1.08,
-      0.35,
+      0.25,
     ),
-  ].filter((vehicle) => !compact || vehicle.id !== 'EMP-02')
+    vehicleStart(
+      'TP-02',
+      'Transpaleteira elétrica de expedição',
+      'pallet-jack',
+      ['inbound-transfer', 'shipping'],
+      '#2563eb',
+      {
+        x: geometry.shippingX + 1.8,
+        y: 0.2,
+        z: geometry.frontZ - 4.5,
+      },
+      Math.PI,
+      1.03,
+      1.1,
+    ),
+  ].filter((vehicle) => !compact || ['EMP-01', 'TP-01'].includes(vehicle.id))
 
-  if (reserveLocations.length < 3 || pickingLocations.length < 2) {
+  if (reserveLocations.length < inboundCount + 1 || pickingLocations.length < 4) {
     return {
       vehicles,
       missions: [],
@@ -323,96 +423,110 @@ export function buildRealisticFleetPlan(
     rackStop(layout, location, `Picking ${index + 1}`),
   )
 
-  const missions: FleetMission[] = [
-    {
-      id: 'inbound-transfer-1',
-      palletId: 'DEMO-IN-01',
-      color: PALLET_COLORS[0],
-      role: 'inbound-transfer',
-      source: receivingStops[0],
-      destination: stagingStops[0],
-      eligibleKinds: ['pallet-jack'],
+  const missions: FleetMission[] = []
+  let truckIndex = 0
+
+  missions.push(
+    createMission(layout, {
+      id: 'shipping-initial-1',
+      palletId: 'DEMO-PICK-01',
+      color: PALLET_COLORS[4],
+      role: 'shipping',
+      source: pickingStops[1],
+      destination: truckStops[truckIndex++],
+      eligibleKinds: ['pallet-jack', 'forklift'],
       priority: 1,
       sequence: 1,
-    },
-    {
-      id: 'putaway-1',
-      palletId: 'DEMO-IN-01',
-      color: PALLET_COLORS[0],
-      role: 'putaway',
-      source: stagingStops[0],
-      destination: reserveStops[0],
-      eligibleKinds: ['forklift'],
-      priority: 2,
-      sequence: 2,
-    },
-    {
-      id: 'inbound-transfer-2',
-      palletId: 'DEMO-IN-02',
-      color: PALLET_COLORS[1],
-      role: 'inbound-transfer',
-      source: receivingStops[1],
-      destination: stagingStops[1],
-      eligibleKinds: ['pallet-jack'],
+    }),
+    createMission(layout, {
+      id: 'shipping-initial-2',
+      palletId: 'DEMO-PICK-02',
+      color: PALLET_COLORS[5],
+      role: 'shipping',
+      source: pickingStops[2],
+      destination: truckStops[truckIndex++],
+      eligibleKinds: ['pallet-jack', 'forklift'],
       priority: 1,
-      sequence: 3,
-    },
-    {
-      id: 'putaway-2',
-      palletId: 'DEMO-IN-02',
-      color: PALLET_COLORS[1],
-      role: 'putaway',
-      source: stagingStops[1],
-      destination: reserveStops[1],
-      eligibleKinds: ['forklift'],
-      priority: 2,
-      sequence: 4,
-    },
-    {
-      id: 'replenishment-1',
+      sequence: 2,
+    }),
+    createMission(layout, {
+      id: 'replenishment-initial',
       palletId: 'DEMO-RES-01',
-      color: PALLET_COLORS[2],
+      color: PALLET_COLORS[3],
       role: 'replenishment',
-      source: reserveStops[2],
+      source: reserveStops[inboundCount],
       destination: pickingStops[0],
       eligibleKinds: ['forklift'],
       priority: 1,
-      sequence: 1,
-    },
-    {
-      id: 'shipping-1',
-      palletId: 'DEMO-PICK-01',
+      sequence: 3,
+    }),
+    createMission(layout, {
+      id: 'shipping-reserve-initial',
+      palletId: 'DEMO-RES-01',
       color: PALLET_COLORS[3],
       role: 'shipping',
-      source: pickingStops[1],
-      destination: truckStops[0],
+      source: pickingStops[0],
+      destination: truckStops[truckIndex++],
       eligibleKinds: ['pallet-jack', 'forklift'],
-      priority: 1,
-      sequence: 1,
-    },
-    {
-      id: 'replenishment-2',
-      palletId: 'DEMO-IN-01',
-      color: PALLET_COLORS[0],
-      role: 'replenishment',
-      source: reserveStops[0],
-      destination: pickingStops[Math.min(2, pickingStops.length - 1)],
-      eligibleKinds: ['forklift'],
-      priority: 3,
-      sequence: 5,
-    },
-    {
-      id: 'shipping-2',
-      palletId: 'DEMO-IN-01',
-      color: PALLET_COLORS[0],
-      role: 'shipping',
-      source: pickingStops[Math.min(2, pickingStops.length - 1)],
-      destination: truckStops[1],
-      eligibleKinds: ['pallet-jack', 'forklift'],
-      priority: 3,
-      sequence: 6,
-    },
-  ]
+      priority: 2,
+      sequence: 4,
+    }),
+  )
+
+  for (let index = 0; index < inboundCount; index += 1) {
+    const suffix = index + 1
+    const palletId = `DEMO-IN-0${suffix}`
+    const color = PALLET_COLORS[index]
+    const pickingStop = pickingStops[Math.min(index + 1, pickingStops.length - 1)]
+    const sequence = 10 + index * 4
+
+    missions.push(
+      createMission(layout, {
+        id: `inbound-transfer-${suffix}`,
+        palletId,
+        color,
+        role: 'inbound-transfer',
+        source: receivingStops[index],
+        destination: stagingStops[index],
+        eligibleKinds: ['pallet-jack'],
+        priority: 1,
+        sequence,
+      }),
+      createMission(layout, {
+        id: `putaway-${suffix}`,
+        palletId,
+        color,
+        role: 'putaway',
+        source: stagingStops[index],
+        destination: reserveStops[index],
+        eligibleKinds: ['forklift'],
+        priority: 2,
+        sequence: sequence + 1,
+      }),
+      createMission(layout, {
+        id: `replenishment-${suffix}`,
+        palletId,
+        color,
+        role: 'replenishment',
+        source: reserveStops[index],
+        destination: pickingStop,
+        eligibleKinds: ['forklift'],
+        priority: 3,
+        sequence: sequence + 2,
+      }),
+      createMission(layout, {
+        id: `shipping-${suffix}`,
+        palletId,
+        color,
+        role: 'shipping',
+        source: pickingStop,
+        destination: truckStops[Math.min(truckIndex++, truckStops.length - 1)],
+        eligibleKinds: ['pallet-jack', 'forklift'],
+        priority: 4,
+        sequence: sequence + 3,
+      }),
+    )
+  }
 
   const initialPalletStops: Record<string, RealisticMissionStop> = {}
   missions.forEach((mission) => {
@@ -420,6 +534,8 @@ export function buildRealisticFleetPlan(
       initialPalletStops[mission.palletId] = mission.source
     }
   })
+
+  registerMissionTraffic(missions)
 
   return {
     vehicles,
@@ -469,10 +585,18 @@ export function chooseMissionForVehicle(
   reservedMissionIds: Set<string>,
   reservedDestinationIds: Set<string>,
 ): FleetMission | undefined {
+  const reservedTrafficCells = new Set<string>()
+  reservedMissionIds.forEach((missionId) => {
+    missionTrafficRegistry.get(missionId)?.forEach((cell) => {
+      reservedTrafficCells.add(cell)
+    })
+  })
+
   return missions.find(
     (mission) =>
       !reservedMissionIds.has(mission.id) &&
       !reservedDestinationIds.has(mission.destination.id) &&
+      !trafficCellsConflict(mission.trafficCells, reservedTrafficCells) &&
       mission.eligibleKinds.includes(vehicle.kind) &&
       vehicle.roles.includes(mission.role),
   )
