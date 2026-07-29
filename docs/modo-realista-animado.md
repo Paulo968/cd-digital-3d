@@ -4,7 +4,7 @@
 
 Transformar o modo `realistic` em uma apresentação viva do centro de distribuição sem misturar animação demonstrativa com dados operacionais ou confirmação física.
 
-O modo operacional continua sendo a visão principal para consulta, rastreabilidade, movimentações e simulações dirigidas. O modo realista acrescenta ambientação e um ciclo visual físico, mas continua sem confirmar operações reais.
+O modo operacional continua sendo a visão principal para consulta, rastreabilidade, movimentações e simulações dirigidas. O modo realista acrescenta ambientação e uma operação visual contínua, mas continua sem confirmar operações reais.
 
 ## Elementos do ambiente
 
@@ -14,7 +14,7 @@ O modo operacional continua sendo a visão principal para consulta, rastreabilid
 - duas docas visuais vinculadas às zonas de recebimento e expedição;
 - caminhões simplificados com carroceria aberta;
 - posições visuais de carga dentro do caminhão;
-- plataformas baixas de recebimento compatíveis com a altura dos garfos;
+- plataformas baixas de recebimento e áreas de espera;
 - defensas, faixas de segurança e luminárias;
 - vigas superiores sem cobertura opaca, preservando a leitura do CD pela câmera.
 
@@ -32,45 +32,79 @@ Longarinas, pallet, carga e garfos usam uma referência vertical comum:
 
 Essa regra elimina o efeito de pallet flutuando sem comprometer a elevação dos garfos.
 
-## Posição persistente da empilhadeira
+## Frota demonstrativa
+
+### Desktop
+
+- **EMP-01** — empilhadeira de armazenagem, reabastecimento e expedição;
+- **EMP-02** — segunda empilhadeira para permitir trabalho simultâneo;
+- **TP-01** — transpaleteira elétrica para transporte de piso, recebimento, espera e doca.
+
+### Celular e dispositivos compactos
+
+- **EMP-01** — concentra as tarefas que exigem elevação;
+- **TP-01** — mantém o fluxo de transporte de piso e expedição;
+- a segunda empilhadeira não é montada para preservar memória, desenho e bateria.
+
+Cada veículo permanece montado durante a operação. Uma nova tarefa utiliza a coordenada em que a máquina terminou a missão anterior, sem recriar ou teleportar o equipamento.
+
+## Posição persistente da EMP-01
 
 A EMP-01 possui duas representações complementares de posição:
 
 - **posição persistida** — salva o último ponto concluído e sobrevive à troca de abas, modos e recarregamento da página;
 - **pose de execução** — guarda coordenada e orientação atuais durante o movimento, sem atualizar Zustand ou React por quadro.
 
-Quando uma nova transferência é solicitada, a rota é recalculada no instante do comando usando a pose de execução mais recente. A empilhadeira não volta automaticamente à expedição e não reaparece no centro do galpão.
+Quando uma nova transferência manual é solicitada, a rota é recalculada no instante do comando usando a pose de execução mais recente. A EMP-01 não volta automaticamente à expedição e não reaparece no centro do galpão.
 
-Ao terminar uma entrega, a posição após o recuo vira a origem da missão seguinte.
+## Despachante de missões
 
-## Fila operacional demonstrativa
+A operação realista trabalha com uma fila compartilhada. Cada missão possui:
 
-O modo realista não usa mais um único pallet atravessando todas as etapas. A fila alterna unidades diferentes e executa missões independentes:
+- pallet identificado;
+- origem e destino;
+- papel operacional;
+- tipo de veículo permitido;
+- prioridade;
+- posição na sequência.
 
-1. **Armazenagem** — um pallet do recebimento é levado para uma posição de reserva.
-2. **Reabastecimento** — outro pallet é retirado de uma posição de reserva e levado ao picking.
-3. **Expedição** — outro pallet sai do picking e é colocado dentro do caminhão.
-4. **Nova armazenagem** — a empilhadeira sai da última entrega e busca outro pallet no recebimento.
-5. **Continuidade** — pallets deixados em reserva ou picking podem ser recolhidos em uma missão posterior.
+O despachante só entrega uma missão quando:
 
-Depois de cada depósito, a EMP-01:
+1. o pallet está realmente no ponto de origem visual;
+2. nenhuma missão anterior do mesmo pallet continua em execução;
+3. existe um veículo ocioso compatível com o papel;
+4. o destino não está reservado por outra missão simultânea.
+
+Isso impede que uma empilhadeira tente retirar um pallet enquanto a transpaleteira anterior ainda está recuando ou baixando os garfos.
+
+## Fluxo operacional demonstrativo
+
+A fila alterna pallets e veículos em uma cadeia semelhante a uma operação de CD:
+
+1. **Transferência de entrada** — a TP-01 retira um pallet do recebimento e leva para a área de espera.
+2. **Armazenagem** — uma empilhadeira busca esse pallet na espera e o coloca na reserva.
+3. **Reabastecimento** — uma empilhadeira leva outro pallet da reserva ao picking.
+4. **Expedição** — a transpaleteira ou uma empilhadeira leva um pallet de picking para o caminhão.
+5. **Continuidade** — pallets armazenados podem entrar em tarefas posteriores, usando o local onde foram realmente deixados.
+
+Depois de cada depósito, o veículo:
 
 1. desacopla o pallet;
 2. recua;
 3. baixa os garfos para a altura de transporte;
-4. permanece no ponto onde terminou;
-5. calcula a rota vazia até a próxima origem;
-6. segue o trajeto completo antes de iniciar a coleta.
+4. conclui a missão;
+5. permanece no ponto onde terminou;
+6. calcula a rota vazia até a próxima origem quando recebe outra ordem.
 
-Ao final de uma onda demonstrativa, novos pallets são preparados nas posições iniciais, mas a empilhadeira continua onde parou e percorre fisicamente o caminho até a primeira origem da onda seguinte.
+Ao final de uma onda demonstrativa, os pallets são preparados novamente nas posições iniciais, mas a frota permanece onde parou. Cada veículo percorre fisicamente o caminho até sua próxima origem.
 
-O ciclo é exclusivamente visual:
+A operação é exclusivamente visual:
 
 - não altera estoque oficial;
 - não gera evento de rastreabilidade;
 - não confirma movimentação física;
 - não substitui a simulação manual de pallet;
-- desaparece quando existe uma rota manual ou transferência visual ativa, evitando empilhadeiras duplicadas;
+- desaparece quando existe uma rota manual ou transferência visual ativa, evitando veículos duplicados;
 - respeita `prefers-reduced-motion`.
 
 ## Movimento dos veículos
@@ -84,7 +118,8 @@ As rotas continuam derivadas da geometria simplificada do layout, porém a repro
 - velocidade menor com carga;
 - aproximação e recuo controlados;
 - altura de transporte separada da altura de coleta;
-- continuidade entre a posição final e a próxima rota vazia.
+- continuidade entre a posição final e a próxima rota vazia;
+- velocidades ligeiramente diferentes por tipo de veículo.
 
 Não foi adicionada física pesada. O modelo cinemático é determinístico, mais leve e mais adequado a uma demonstração logística em navegador.
 
@@ -95,8 +130,9 @@ Não foi adicionada física pesada. O modelo cinemático é determinístico, mai
 - ambientação completa;
 - sombras ativadas no modo realista;
 - dois caminhões;
+- duas empilhadeiras e uma transpaleteira;
 - luminárias e vigas em quantidade moderada;
-- ciclo visual automático, respeitando `prefers-reduced-motion`.
+- operação visual automática, respeitando `prefers-reduced-motion`.
 
 ### Celular e dispositivos com ponteiro grosseiro
 
@@ -104,14 +140,16 @@ Não foi adicionada física pesada. O modelo cinemático é determinístico, mai
 - `devicePixelRatio` reduzido;
 - quantidade de luminárias e detalhes reduzida;
 - apenas um caminhão detalhado;
+- uma empilhadeira e uma transpaleteira;
 - rodas com menos segmentos;
-- ciclo visual mantido em velocidade moderada quando o usuário não pediu redução de movimento.
+- operação mantida em velocidade moderada quando o usuário não pediu redução de movimento.
 
 ### Regras gerais
 
 - `frameloop="demand"` permanece ativo;
 - componentes animados chamam `invalidate()` apenas enquanto estão em movimento;
 - a pose por quadro fica em uma variável de runtime, fora do Zustand e do React;
+- mudanças de missão atualizam estado apenas nos eventos de coleta, depósito e conclusão;
 - o modo operacional não monta os elementos realistas;
 - o marcador de seleção deixa de animar quando há preferência por movimento reduzido;
 - objetos auxiliares de `InstancedMesh` são reutilizados para reduzir alocações;
@@ -119,15 +157,19 @@ Não foi adicionada física pesada. O modelo cinemático é determinístico, mai
 
 ## Limites declarados
 
-O ciclo automático representa uma sequência operacional visual. Ele ainda não reproduz:
+A frota automática representa uma sequência operacional visual. Ela ainda não reproduz:
 
 - tempos calibrados em uma operação real;
-- capacidade real por modelo de empilhadeira;
+- capacidade real por modelo de equipamento;
 - mapa de colisão completo;
-- tráfego de pessoas e outros veículos;
+- reserva de trechos e cruzamentos;
+- espera automática por corredor ocupado;
+- tráfego de pessoas;
 - bateria e recarga;
-- filas e congestionamentos;
+- filas de caminhões e docas;
 - regras reais de unitização e carregamento;
 - comandos para equipamentos físicos.
+
+Colisão, prioridade dinâmica de corredores, espera e congestionamento pertencem à fase seguinte do motor operacional.
 
 A simulação manual de pallet continua sendo o recurso que representa origem, destino, unidade logística e eventual aplicação ao cenário sistêmico.
