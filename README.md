@@ -8,7 +8,10 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 
 - motor 3D otimizado com `InstancedMesh` para estruturas, posições, pallets e cargas;
 - modo operacional focado em leitura, consulta e análise;
-- modo realista com galpão, docas, pátio, caminhões e ciclo visual de recebimento, reabastecimento e expedição;
+- modo realista com galpão, docas, pátio, caminhões e ciclo visual de recebimento, armazenagem, reabastecimento e expedição;
+- um único pallet visual persistente no ciclo realista, coletado pelos garfos e depositado em reserva, picking e dentro da carroceria;
+- aceleração, frenagem, orientação progressiva e curvas arredondadas na movimentação dos veículos;
+- geometria compartilhada entre longarinas, pallets, cargas e garfos, evitando cargas visualmente flutuantes;
 - qualidade adaptativa para reduzir sombras, resolução e detalhes em celulares e dispositivos com ponteiro grosseiro;
 - construtor guiado de layouts regulares;
 - proteção de estoque em alterações compatíveis de layout;
@@ -28,7 +31,7 @@ O 3D representa os dados carregados. Importação de ERP/WMS é tratada como inf
 
 A sequência heurística busca reduzir a distância em relação à ordem informada, mas não garante o ótimo global. Distâncias calculadas não representam tempo, produtividade ou economia financeira comprovados.
 
-O ciclo automático do modo realista é exclusivamente demonstrativo: não altera estoque, não gera evento e não representa comando de equipamento físico.
+O ciclo automático do modo realista é exclusivamente demonstrativo: não altera estoque, não gera evento e não representa comando de equipamento físico. A animação usa um pallet persistente para representar a sequência operacional sem fabricar confirmação física.
 
 ## Auditoria
 
@@ -39,18 +42,21 @@ A arquitetura, os elementos, os limites e a estratégia responsiva do ambiente v
 ## Executar
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
+
+O `package-lock.json` é versionado para manter as mesmas versões de dependências no desenvolvimento, no CI e na publicação.
 
 ## Validar
 
 ```bash
 npm run lint
+npm run test
 npm run build
 ```
 
-O projeto é publicado automaticamente no GitHub Pages após lint e build bem-sucedidos na branch `main`.
+Pull requests e branches `feat/**` ou `fix/**` executam automaticamente instalação, lint, testes e build. A branch `main` continua responsável pela publicação no GitHub Pages.
 
 ## Licenciamento
 

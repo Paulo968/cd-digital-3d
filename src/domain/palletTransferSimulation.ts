@@ -2,11 +2,11 @@ import type { WarehouseLayout } from './layout'
 import {
   buildTravelPath,
   getLocationAccessPoint,
-  getLocationWorldPoint,
   getZoneWorldPoint,
   polylineDistance,
   type WorldPoint,
 } from './routePlanning'
+import { getForkCarriageHeight } from './warehouseGeometry'
 import type { WarehouseLocation } from './warehouse'
 
 /**
@@ -45,15 +45,6 @@ function facingForLocation(
 
   if (!row) return 0
   return row.rotationY + (location.side === 'left' ? 0 : Math.PI)
-}
-
-function visualForkHeight(
-  layout: WarehouseLayout,
-  location: WarehouseLocation,
-): number {
-  const palletCenter = getLocationWorldPoint(layout, location).y - 0.42
-  const vehicleWorldY = 0.18
-  return Math.max(0.36, palletCenter - vehicleWorldY)
 }
 
 export function buildPalletTransferSimulation(
@@ -108,8 +99,8 @@ export function buildPalletTransferSimulation(
     emptyDistance: Number(emptyDistance.toFixed(2)),
     loadedDistance: Number(loadedDistance.toFixed(2)),
     totalDistance: Number((emptyDistance + loadedDistance).toFixed(2)),
-    sourceForkHeight: visualForkHeight(layout, source),
-    destinationForkHeight: visualForkHeight(layout, destination),
+    sourceForkHeight: getForkCarriageHeight(layout, source),
+    destinationForkHeight: getForkCarriageHeight(layout, destination),
     sourceFacing: facingForLocation(layout, source),
     destinationFacing: facingForLocation(layout, destination),
     createdAt: new Date().toISOString(),
