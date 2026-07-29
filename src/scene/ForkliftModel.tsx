@@ -11,6 +11,7 @@ interface ForkliftModelProps {
   cargoColor?: string
   compact?: boolean
   reportRuntimePose?: boolean
+  accent?: string
 }
 
 const WORLD_POSITION = new THREE.Vector3()
@@ -24,6 +25,7 @@ export function ForkliftModel({
   cargoColor = '#38bdf8',
   compact = false,
   reportRuntimePose = true,
+  accent = '#f59e0b',
 }: ForkliftModelProps) {
   const rootRef = useRef<THREE.Group | null>(null)
   const internalCarriageRef = useRef<THREE.Group | null>(null)
@@ -48,7 +50,7 @@ export function ForkliftModel({
     <group ref={rootRef}>
       <mesh position={[0, 0.35, 0]} castShadow>
         <boxGeometry args={[1.15, 0.65, 1.6]} />
-        <meshStandardMaterial color="#f59e0b" roughness={0.52} />
+        <meshStandardMaterial color={accent} roughness={0.52} />
       </mesh>
       <mesh position={[0, 0.95, 0.15]} castShadow>
         <boxGeometry args={[0.85, 0.75, 0.9]} />
