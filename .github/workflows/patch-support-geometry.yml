@@ -1,18 +1,19 @@
 name: Patch support geometry
 
 on:
-  push:
-    branches: [feat/realistic-mission-engine]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   patch:
-    if: github.actor != 'github-actions[bot]'
+    if: github.head_ref == 'feat/realistic-mission-engine' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout branch
+      - name: Checkout feature branch
         uses: actions/checkout@v4
         with:
           ref: feat/realistic-mission-engine
@@ -62,5 +63,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/scene/RealisticEnvironment.tsx
+          if git diff --cached --quiet; then
+            echo "A geometria já está corrigida."
+            exit 0
+          fi
           git commit -m "fix: alinha pallet ao recebimento e ao piso do caminhão"
           git push origin HEAD:feat/realistic-mission-engine
