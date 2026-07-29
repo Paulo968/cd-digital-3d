@@ -11,12 +11,23 @@ import type { WarehouseLocation } from '../domain/warehouse'
 export type OperationalVehicleAnchor =
   | { kind: 'shipping' }
   | { kind: 'address'; address: string }
+  | {
+      kind: 'point'
+      point: WorldPoint
+      label: string
+      facing: number
+    }
 
 interface OperationalVehicleState {
   vehicleId: string
   anchor: OperationalVehicleAnchor
   parkAtAddress: (address: string) => void
+  parkAtPoint: (point: WorldPoint, label?: string, facing?: number) => void
   resetToShipping: () => void
+}
+
+function safeCoordinate(value: number, fallback = 0): number {
+  return Number.isFinite(value) ? value : fallback
 }
 
 export function resolveOperationalVehiclePoint(
@@ -24,6 +35,14 @@ export function resolveOperationalVehiclePoint(
   locations: WarehouseLocation[],
   anchor: OperationalVehicleAnchor,
 ): WorldPoint {
+  if (anchor.kind === 'point') {
+    return {
+      x: safeCoordinate(anchor.point.x),
+      y: safeCoordinate(anchor.point.y, 0.2),
+      z: safeCoordinate(anchor.point.z),
+    }
+  }
+
   if (anchor.kind === 'address') {
     const location = locations.find((item) => item.address === anchor.address)
     if (location) return getLocationAccessPoint(layout, location)
@@ -32,10 +51,20 @@ export function resolveOperationalVehiclePoint(
   return getZoneWorldPoint(layout, 'shipping')
 }
 
+export function resolveOperationalVehicleFacing(
+  anchor: OperationalVehicleAnchor,
+): number {
+  return anchor.kind === 'point' && Number.isFinite(anchor.facing)
+    ? anchor.facing
+    : 0
+}
+
 export function describeOperationalVehicleAnchor(
   anchor: OperationalVehicleAnchor,
   locations: WarehouseLocation[],
 ): string {
+  if (anchor.kind === 'point') return anchor.label
+
   if (
     anchor.kind === 'address' &&
     locations.some((location) => location.address === anchor.address)
@@ -53,6 +82,19 @@ export const useOperationalVehicleStore = create<OperationalVehicleState>()(
       anchor: { kind: 'shipping' },
       parkAtAddress: (address) =>
         set({ anchor: { kind: 'address', address: address.trim().toUpperCase() } }),
+      parkAtPoint: (point, label = 'Ponto operacional', facing = 0) =>
+        set({
+          anchor: {
+            kind: 'point',
+            point: {
+              x: safeCoordinate(point.x),
+              y: safeCoordinate(point.y, 0.2),
+              z: safeCoordinate(point.z),
+            },
+            label: label.trim() || 'Ponto operacional',
+            facing: safeCoordinate(facing),
+          },
+        }),
       resetToShipping: () => set({ anchor: { kind: 'shipping' } }),
     }),
     {
