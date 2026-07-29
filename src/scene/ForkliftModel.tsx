@@ -1,0 +1,81 @@
+import { useRef, type MutableRefObject } from 'react'
+import * as THREE from 'three'
+import { FORK_THICKNESS, TRAVEL_FORK_HEIGHT } from '../domain/warehouseGeometry'
+
+interface ForkliftModelProps {
+  carriageRef?: MutableRefObject<THREE.Group | null>
+  mastHeight?: number
+  cargoVisible?: boolean
+  cargoColor?: string
+  compact?: boolean
+}
+
+export function ForkliftModel({
+  carriageRef,
+  mastHeight = 2.4,
+  cargoVisible = false,
+  cargoColor = '#38bdf8',
+  compact = false,
+}: ForkliftModelProps) {
+  const internalCarriageRef = useRef<THREE.Group | null>(null)
+  const resolvedCarriageRef = carriageRef ?? internalCarriageRef
+  const wheelSegments = compact ? 10 : 16
+
+  return (
+    <group>
+      <mesh position={[0, 0.35, 0]} castShadow>
+        <boxGeometry args={[1.15, 0.65, 1.6]} />
+        <meshStandardMaterial color="#f59e0b" roughness={0.52} />
+      </mesh>
+      <mesh position={[0, 0.95, 0.15]} castShadow>
+        <boxGeometry args={[0.85, 0.75, 0.9]} />
+        <meshStandardMaterial color="#1f2937" roughness={0.45} />
+      </mesh>
+
+      {[-0.48, 0.48].flatMap((x) =>
+        [-0.48, 0.58].map((z) => (
+          <mesh
+            key={`${x}-${z}`}
+            position={[x, 0.16, z]}
+            rotation={[0, 0, Math.PI / 2]}
+          >
+            <cylinderGeometry args={[0.19, 0.19, 0.16, wheelSegments]} />
+            <meshStandardMaterial color="#111827" roughness={0.92} />
+          </mesh>
+        )),
+      )}
+
+      <mesh position={[-0.34, mastHeight / 2, -0.88]} castShadow>
+        <boxGeometry args={[0.12, mastHeight, 0.12]} />
+        <meshStandardMaterial color="#334155" metalness={0.6} roughness={0.4} />
+      </mesh>
+      <mesh position={[0.34, mastHeight / 2, -0.88]} castShadow>
+        <boxGeometry args={[0.12, mastHeight, 0.12]} />
+        <meshStandardMaterial color="#334155" metalness={0.6} roughness={0.4} />
+      </mesh>
+
+      <group ref={resolvedCarriageRef} position={[0, TRAVEL_FORK_HEIGHT, -0.9]}>
+        <mesh position={[-0.28, 0, -0.65]} castShadow>
+          <boxGeometry args={[0.12, FORK_THICKNESS, 1.35]} />
+          <meshStandardMaterial color="#475569" metalness={0.7} roughness={0.35} />
+        </mesh>
+        <mesh position={[0.28, 0, -0.65]} castShadow>
+          <boxGeometry args={[0.12, FORK_THICKNESS, 1.35]} />
+          <meshStandardMaterial color="#475569" metalness={0.7} roughness={0.35} />
+        </mesh>
+        {cargoVisible && (
+          <group position={[0, FORK_THICKNESS / 2 + 0.1, -0.72]}>
+            <mesh castShadow>
+              <boxGeometry args={[1.02, 0.12, 0.92]} />
+              <meshStandardMaterial color="#8b5a2b" roughness={0.86} />
+            </mesh>
+            <mesh position={[0, 0.5, 0]} castShadow>
+              <boxGeometry args={[0.94, 0.82, 0.84]} />
+              <meshStandardMaterial color={cargoColor} roughness={0.68} />
+            </mesh>
+          </group>
+        )}
+      </group>
+    </group>
+  )
+}
