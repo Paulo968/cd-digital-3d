@@ -1,4 +1,8 @@
-import type { WarehouseLayout, WarehouseZoneType } from './layout'
+import type {
+  RackRowLayout,
+  WarehouseLayout,
+  WarehouseZoneType,
+} from './layout'
 import type { WarehouseLocation } from './warehouse'
 
 export interface WorldPoint {
@@ -18,6 +22,47 @@ export interface RoutePlan {
   createdAt: string
 }
 
+export interface VehicleProfile {
+  width: number
+  length: number
+  turningRadius: number
+  safetyMargin: number
+}
+
+export interface RouteClearanceIssue {
+  rackRowId: string
+  aisle: string
+  actualWidth: number
+  requiredWidth: number
+}
+
+export const DEFAULT_FORKLIFT_PROFILE: VehicleProfile = {
+  width: 1.15,
+  length: 2.95,
+  turningRadius: 1.45,
+  safetyMargin: 0.45,
+}
+
+interface GraphEdge {
+  to: string
+  cost: number
+}
+
+interface GraphNode {
+  id: string
+  point: WorldPoint
+  edges: GraphEdge[]
+}
+
+interface RowLane {
+  row: RackRowLayout
+  leftId: string
+  rightId: string
+  left: WorldPoint
+  right: WorldPoint
+  halfLength: number
+}
+
 function rotatePoint(
   x: number,
   z: number,
@@ -28,6 +73,30 @@ function rotatePoint(
   return {
     x: x * cosine - z * sine,
     z: x * sine + z * cosine,
+  }
+}
+
+function toLocalPoint(
+  point: WorldPoint,
+  row: RackRowLayout,
+): { x: number; z: number } {
+  return rotatePoint(
+    point.x - row.origin.x,
+    point.z - row.origin.z,
+    -row.rotationY,
+  )
+}
+
+function rowPoint(
+  row: RackRowLayout,
+  localX: number,
+  localZ = 0,
+): WorldPoint {
+  const rotated = rotatePoint(localX, localZ, row.rotationY)
+  return {
+    x: row.origin.x + rotated.x,
+    y: 0.2,
+    z: row.origin.z + rotated.z,
   }
 }
 
@@ -66,13 +135,7 @@ export function getLocationAccessPoint(
 
   const rackLength = row.baysPerSide * row.bayWidth
   const localX = (location.bay - 0.5) * row.bayWidth - rackLength / 2
-  const rotated = rotatePoint(localX, 0, row.rotationY)
-
-  return {
-    x: row.origin.x + rotated.x,
-    y: 0.2,
-    z: row.origin.z + rotated.z,
-  }
+  return rowPoint(row, localX)
 }
 
 export function getZoneWorldPoint(
@@ -94,16 +157,191 @@ function append(points: WorldPoint[], point: WorldPoint): void {
   if (!last || pointDistance(last, point) > 0.001) points.push(point)
 }
 
-function crossAisleX(
+function addNode(
+  graph: Map<string, GraphNode>,
+  id: string,
+  point: WorldPoint,
+): GraphNode {
+  const existing = graph.get(id)
+  if (existing) return existing
+  const node = { id, point, edges: [] }
+  graph.set(id, node)
+  return node
+}
+
+function addEdge(
+  graph: Map<string, GraphNode>,
+  leftId: string,
+  rightId: string,
+  cost?: number,
+): void {
+  const left = graph.get(leftId)
+  const right = graph.get(rightId)
+  if (!left || !right || leftId === rightId) return
+  const resolvedCost = cost ?? pointDistance(left.point, right.point)
+
+  if (!left.edges.some((edge) => edge.to === rightId)) {
+    left.edges.push({ to: rightId, cost: resolvedCost })
+  }
+  if (!right.edges.some((edge) => edge.to === leftId)) {
+    right.edges.push({ to: leftId, cost: resolvedCost })
+  }
+}
+
+function buildRowLanes(
   layout: WarehouseLayout,
+  graph: Map<string, GraphNode>,
+): RowLane[] {
+  return layout.rackRows
+    .filter((row) => row.active)
+    .map((row) => {
+      const halfLength = (row.baysPerSide * row.bayWidth) / 2 + 2.2
+      const leftId = `${row.id}:left`
+      const rightId = `${row.id}:right`
+      const left = rowPoint(row, -halfLength)
+      const right = rowPoint(row, halfLength)
+      addNode(graph, leftId, left)
+      addNode(graph, rightId, right)
+      addEdge(graph, leftId, rightId)
+      return { row, leftId, rightId, left, right, halfLength }
+    })
+}
+
+function addCrossAisleEdges(
+  graph: Map<string, GraphNode>,
+  lanes: RowLane[],
   side: 'left' | 'right',
-): number {
-  const activeRows = layout.rackRows.filter((row) => row.active)
-  const maxHalf = Math.max(
-    ...activeRows.map((row) => (row.baysPerSide * row.bayWidth) / 2),
-    6,
-  )
-  return side === 'left' ? -maxHalf - 2.2 : maxHalf + 2.2
+): void {
+  const nodes = lanes.map((lane) => ({
+    id: side === 'left' ? lane.leftId : lane.rightId,
+    point: side === 'left' ? lane.left : lane.right,
+  }))
+
+  nodes.forEach((node, index) => {
+    const nearest = nodes
+      .filter((_, candidateIndex) => candidateIndex !== index)
+      .map((candidate) => ({
+        ...candidate,
+        distance: pointDistance(node.point, candidate.point),
+      }))
+      .sort((left, right) => left.distance - right.distance)
+      .slice(0, Math.min(2, nodes.length - 1))
+
+    nearest.forEach((candidate) => {
+      addEdge(graph, node.id, candidate.id, candidate.distance)
+    })
+  })
+}
+
+function laneForPoint(point: WorldPoint, lanes: RowLane[]): RowLane | undefined {
+  let selected: RowLane | undefined
+  let selectedDistance = Number.POSITIVE_INFINITY
+
+  lanes.forEach((lane) => {
+    const local = toLocalPoint(point, lane.row)
+    const insideLength = Math.abs(local.x) <= lane.halfLength + 0.25
+    const distanceFromCenter = Math.abs(local.z)
+    const insideAisle =
+      distanceFromCenter <= lane.row.aisleWidth / 2 + 0.65
+
+    if (insideLength && insideAisle && distanceFromCenter < selectedDistance) {
+      selected = lane
+      selectedDistance = distanceFromCenter
+    }
+  })
+
+  return selected
+}
+
+function attachPoint(
+  graph: Map<string, GraphNode>,
+  lanes: RowLane[],
+  id: string,
+  point: WorldPoint,
+): string {
+  addNode(graph, id, point)
+  const lane = laneForPoint(point, lanes)
+
+  if (lane) {
+    addEdge(graph, id, lane.leftId)
+    addEdge(graph, id, lane.rightId)
+    return id
+  }
+
+  const endpointIds = lanes.flatMap((candidate) => [
+    candidate.leftId,
+    candidate.rightId,
+  ])
+  const nearest = endpointIds
+    .map((endpointId) => ({
+      endpointId,
+      distance: pointDistance(point, graph.get(endpointId)!.point),
+    }))
+    .sort((left, right) => left.distance - right.distance)
+    .slice(0, Math.min(2, endpointIds.length))
+
+  nearest.forEach(({ endpointId, distance }) => {
+    addEdge(graph, id, endpointId, distance)
+  })
+  return id
+}
+
+function shortestPath(
+  graph: Map<string, GraphNode>,
+  startId: string,
+  endId: string,
+): WorldPoint[] {
+  const distances = new Map<string, number>()
+  const previous = new Map<string, string>()
+  const unvisited = new Set(graph.keys())
+
+  graph.forEach((_, id) => distances.set(id, Number.POSITIVE_INFINITY))
+  distances.set(startId, 0)
+
+  while (unvisited.size > 0) {
+    let currentId: string | undefined
+    let currentDistance = Number.POSITIVE_INFINITY
+
+    unvisited.forEach((candidateId) => {
+      const candidateDistance = distances.get(candidateId) ?? Number.POSITIVE_INFINITY
+      if (candidateDistance < currentDistance) {
+        currentId = candidateId
+        currentDistance = candidateDistance
+      }
+    })
+
+    if (!currentId || currentDistance === Number.POSITIVE_INFINITY) break
+    if (currentId === endId) break
+    unvisited.delete(currentId)
+
+    const current = graph.get(currentId)
+    if (!current) continue
+    current.edges.forEach((edge) => {
+      if (!unvisited.has(edge.to)) return
+      const nextDistance = currentDistance + edge.cost
+      if (nextDistance < (distances.get(edge.to) ?? Number.POSITIVE_INFINITY)) {
+        distances.set(edge.to, nextDistance)
+        previous.set(edge.to, currentId!)
+      }
+    })
+  }
+
+  if (!Number.isFinite(distances.get(endId) ?? Number.POSITIVE_INFINITY)) {
+    throw new Error('Não existe rota operacional disponível entre os pontos.')
+  }
+
+  const ids: string[] = [endId]
+  let current = endId
+  while (current !== startId) {
+    const parent = previous.get(current)
+    if (!parent) {
+      throw new Error('A rota operacional ficou desconectada.')
+    }
+    ids.push(parent)
+    current = parent
+  }
+  ids.reverse()
+  return ids.map((id) => graph.get(id)!.point)
 }
 
 function connect(
@@ -112,26 +350,30 @@ function connect(
   to: WorldPoint,
   blocked: { left: boolean; right: boolean },
 ): WorldPoint[] {
-  if (Math.abs(from.z - to.z) < 0.15) return [from, to]
+  if (pointDistance(from, to) < 0.001) return [from]
 
-  const options: Array<WorldPoint[] | null> = (
-    ['left', 'right'] as const
-  ).map((side) => {
-    if (blocked[side]) return null
-    const x = crossAisleX(layout, side)
-    return [from, { x, y: 0.2, z: from.z }, { x, y: 0.2, z: to.z }, to]
-  })
-  const valid = options.filter((value): value is WorldPoint[] => Boolean(value))
+  const graph = new Map<string, GraphNode>()
+  const lanes = buildRowLanes(layout, graph)
+  if (lanes.length === 0) return [from, to]
 
-  if (valid.length === 0) {
+  const fromLane = laneForPoint(from, lanes)
+  const toLane = laneForPoint(to, lanes)
+  if (fromLane && toLane && fromLane.row.id === toLane.row.id) {
+    return [from, to]
+  }
+
+  if (blocked.left && blocked.right) {
     throw new Error(
       'As duas cabeceiras estão bloqueadas. Não existe rota disponível entre as ruas.',
     )
   }
 
-  return valid.sort(
-    (left, right) => polylineDistance(left) - polylineDistance(right),
-  )[0]
+  if (!blocked.left) addCrossAisleEdges(graph, lanes, 'left')
+  if (!blocked.right) addCrossAisleEdges(graph, lanes, 'right')
+
+  const startId = attachPoint(graph, lanes, 'route:start', from)
+  const endId = attachPoint(graph, lanes, 'route:end', to)
+  return shortestPath(graph, startId, endId)
 }
 
 export function buildTravelPath(
@@ -141,6 +383,25 @@ export function buildTravelPath(
   blocked: { left: boolean; right: boolean },
 ): WorldPoint[] {
   return connect(layout, from, to, blocked)
+}
+
+export function getAisleClearanceIssues(
+  layout: WarehouseLayout,
+  vehicle: VehicleProfile = DEFAULT_FORKLIFT_PROFILE,
+): RouteClearanceIssue[] {
+  const requiredWidth = Math.max(
+    vehicle.width + vehicle.safetyMargin * 2,
+    vehicle.turningRadius * 2,
+  )
+
+  return layout.rackRows
+    .filter((row) => row.active && row.aisleWidth < requiredWidth)
+    .map((row) => ({
+      rackRowId: row.id,
+      aisle: row.aisle,
+      actualWidth: row.aisleWidth,
+      requiredWidth: Number(requiredWidth.toFixed(2)),
+    }))
 }
 
 export function polylineDistance(points: WorldPoint[]): number {
