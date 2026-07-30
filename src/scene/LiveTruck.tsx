@@ -15,11 +15,11 @@ interface LiveTruckProps {
 function TruckModel({
   accent,
   compact,
-  closing,
+  closed,
 }: {
   accent: string
   compact: boolean
-  closing: boolean
+  closed: boolean
 }) {
   const wheelSegments = compact ? 10 : 16
   return (
@@ -67,7 +67,7 @@ function TruckModel({
         <meshStandardMaterial
           color="#ef4444"
           emissive="#ef4444"
-          emissiveIntensity={closing ? 1.8 : 0.35}
+          emissiveIntensity={closed ? 1.8 : 0.35}
         />
       </mesh>
       <mesh position={[0.82, 0.74, -5.02]}>
@@ -75,10 +75,10 @@ function TruckModel({
         <meshStandardMaterial
           color="#ef4444"
           emissive="#ef4444"
-          emissiveIntensity={closing ? 1.8 : 0.35}
+          emissiveIntensity={closed ? 1.8 : 0.35}
         />
       </mesh>
-      {closing && (
+      {closed && (
         <mesh position={[0, 1.62, -5.04]} castShadow>
           <boxGeometry args={[2.55, 2.45, 0.12]} />
           <meshStandardMaterial color="#cbd5e1" metalness={0.28} roughness={0.58} />
@@ -127,7 +127,10 @@ export function LiveTruck({ x, dockZ, compact }: LiveTruckProps) {
     }
 
     if (phase === 'departing') {
-      progressRef.current = Math.min(1, progressRef.current + delta / (compact ? 2.4 : 3.2))
+      progressRef.current = Math.min(
+        1,
+        progressRef.current + delta / (compact ? 2.4 : 3.2),
+      )
       const eased = THREE.MathUtils.smoothstep(progressRef.current, 0, 1)
       root.position.z = THREE.MathUtils.lerp(dockZ, farZ, eased)
       if (progressRef.current >= 1) setTruckPhase('away')
@@ -137,13 +140,19 @@ export function LiveTruck({ x, dockZ, compact }: LiveTruckProps) {
 
     if (phase === 'away') {
       waitRef.current += delta
-      if (waitRef.current >= (compact ? 1.5 : 2.4)) setTruckPhase('approaching')
-      else invalidate()
+      if (waitRef.current >= (compact ? 1.5 : 2.4)) {
+        setTruckPhase('approaching')
+      } else {
+        invalidate()
+      }
       return
     }
 
     if (phase === 'approaching') {
-      progressRef.current = Math.min(1, progressRef.current + delta / (compact ? 2.7 : 3.5))
+      progressRef.current = Math.min(
+        1,
+        progressRef.current + delta / (compact ? 2.7 : 3.5),
+      )
       const eased = THREE.MathUtils.smoothstep(progressRef.current, 0, 1)
       root.position.z = THREE.MathUtils.lerp(farZ, dockZ, eased)
       if (progressRef.current >= 1) completeTruckCycle()
@@ -156,15 +165,23 @@ export function LiveTruck({ x, dockZ, compact }: LiveTruckProps) {
   return (
     <group>
       <group ref={rootRef} position={[x, 0.15, dockZ]}>
-        <TruckModel accent="#0284c7" compact={compact} closing={phase === 'closing'} />
+        <TruckModel accent="#0284c7" compact={compact} closed={phase !== 'docked'} />
       </group>
       {Array.from({ length: queueCount }, (_, index) => (
         <group
           key={`truck-queue-${index}`}
-          position={[x + (index % 2 === 0 ? -4.2 : 4.2), 0.15, farZ + index * 7]}
+          position={[
+            x + (index % 2 === 0 ? -4.2 : 4.2),
+            0.15,
+            farZ + index * 7,
+          ]}
           scale={0.92}
         >
-          <TruckModel accent={index % 2 === 0 ? '#7c3aed' : '#0f766e'} compact={compact} closing />
+          <TruckModel
+            accent={index % 2 === 0 ? '#7c3aed' : '#0f766e'}
+            compact={compact}
+            closed
+          />
         </group>
       ))}
     </group>
