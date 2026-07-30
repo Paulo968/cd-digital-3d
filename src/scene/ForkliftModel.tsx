@@ -23,6 +23,14 @@ const WORLD_POSITION = new THREE.Vector3()
 const WORLD_QUATERNION = new THREE.Quaternion()
 const WORLD_EULER = new THREE.Euler(0, 0, 0, 'YXZ')
 
+const RX_RECEIVING_COLOR = '#16a34a'
+const RX_SHIPPING_COLOR = '#0284c7'
+
+export function isDockRxColor(accent: string): boolean {
+  const normalized = accent.toLowerCase()
+  return normalized === RX_RECEIVING_COLOR || normalized === RX_SHIPPING_COLOR
+}
+
 function Wheel({
   x,
   z,
@@ -59,40 +67,22 @@ function Wheel({
   )
 }
 
-export function ForkliftModel({
-  carriageRef,
-  mastHeight = 2.4,
-  cargoVisible = false,
-  cargoColor = '#38bdf8',
-  compact = false,
-  reportRuntimePose = true,
-  accent = '#f97316',
-  emergencyBraking = false,
-  faulted = false,
-}: ForkliftModelProps) {
-  const rootRef = useRef<THREE.Group | null>(null)
-  const internalCarriageRef = useRef<THREE.Group | null>(null)
-  const resolvedCarriageRef = carriageRef ?? internalCarriageRef
+function DockRxBody({
+  accent,
+  compact,
+  emergencyBraking,
+  faulted,
+}: {
+  accent: string
+  compact: boolean
+  emergencyBraking: boolean
+  faulted: boolean
+}) {
   const wheelSegments = compact ? 10 : 18
   const guardHeight = compact ? 1.82 : 1.94
 
-  useFrame(() => {
-    const root = rootRef.current
-    if (!reportRuntimePose || !root || !root.visible) return
-
-    root.getWorldPosition(WORLD_POSITION)
-    root.getWorldQuaternion(WORLD_QUATERNION)
-    WORLD_EULER.setFromQuaternion(WORLD_QUATERNION, 'YXZ')
-    setOperationalVehicleRuntimePose(
-      { x: WORLD_POSITION.x, y: 0.2, z: WORLD_POSITION.z },
-      WORLD_EULER.y,
-      'EMP-01 em execução',
-    )
-  })
-
   return (
-    <group ref={rootRef}>
-      {/* Chassi e carroceria contrabalançada. A frente da máquina aponta para -Z. */}
+    <>
       <mesh position={[0, 0.3, 0.08]} castShadow receiveShadow>
         <boxGeometry args={[1.26, 0.38, 1.62]} />
         <meshStandardMaterial color="#dbe3ea" metalness={0.18} roughness={0.58} />
@@ -114,7 +104,6 @@ export function ForkliftModel({
         <meshStandardMaterial color="#1f2937" roughness={0.72} />
       </mesh>
 
-      {/* Coluna e volante. */}
       <mesh position={[0.22, 1.03, -0.05]} rotation={[0.48, 0, 0]}>
         <cylinderGeometry args={[0.035, 0.045, 0.5, compact ? 8 : 12]} />
         <meshStandardMaterial color="#111827" metalness={0.38} roughness={0.5} />
@@ -127,10 +116,9 @@ export function ForkliftModel({
         <meshStandardMaterial color="#111827" roughness={0.68} />
       </mesh>
 
-      {/* Estrutura de proteção da cabine. */}
       {[-0.48, 0.48].flatMap((x) =>
         [-0.35, 0.55].map((z) => (
-          <mesh key={`guard-${x}-${z}`} position={[x, guardHeight / 2, z]}>
+          <mesh key={`rx-guard-${x}-${z}`} position={[x, guardHeight / 2, z]}>
             <boxGeometry args={[0.065, guardHeight, 0.065]} />
             <meshStandardMaterial
               color="#273449"
@@ -155,39 +143,13 @@ export function ForkliftModel({
         />
       </mesh>
 
-      {/* Rodas dianteiras maiores e traseiras menores. */}
-      <Wheel
-        x={-0.59}
-        z={-0.48}
-        radius={0.29}
-        width={0.19}
-        segments={wheelSegments}
-      />
-      <Wheel
-        x={0.59}
-        z={-0.48}
-        radius={0.29}
-        width={0.19}
-        segments={wheelSegments}
-      />
-      <Wheel
-        x={-0.55}
-        z={0.57}
-        radius={0.23}
-        width={0.17}
-        segments={wheelSegments}
-      />
-      <Wheel
-        x={0.55}
-        z={0.57}
-        radius={0.23}
-        width={0.17}
-        segments={wheelSegments}
-      />
+      <Wheel x={-0.59} z={-0.48} radius={0.29} width={0.19} segments={wheelSegments} />
+      <Wheel x={0.59} z={-0.48} radius={0.29} width={0.19} segments={wheelSegments} />
+      <Wheel x={-0.55} z={0.57} radius={0.23} width={0.17} segments={wheelSegments} />
+      <Wheel x={0.55} z={0.57} radius={0.23} width={0.17} segments={wheelSegments} />
 
-      {/* Faróis e luzes traseiras. */}
       {[-0.4, 0.4].map((x) => (
-        <mesh key={`head-${x}`} position={[x, 1.57, -0.43]}>
+        <mesh key={`rx-head-${x}`} position={[x, 1.57, -0.43]}>
           <boxGeometry args={[0.14, 0.1, 0.045]} />
           <meshStandardMaterial
             color="#f8fafc"
@@ -198,7 +160,7 @@ export function ForkliftModel({
         </mesh>
       ))}
       {[-0.39, 0.39].map((x) => (
-        <mesh key={`brake-${x}`} position={[x, 0.56, 0.86]}>
+        <mesh key={`rx-brake-${x}`} position={[x, 0.56, 0.86]}>
           <boxGeometry args={[0.15, 0.11, 0.045]} />
           <meshStandardMaterial
             color={emergencyBraking || faulted ? '#ef4444' : '#450a0a'}
@@ -209,7 +171,6 @@ export function ForkliftModel({
         </mesh>
       ))}
 
-      {/* Giroflex permanece visível; em avaria fica intensamente emissivo. */}
       <mesh position={[0, guardHeight + 0.13, 0.35]}>
         <cylinderGeometry args={[0.09, 0.11, 0.17, compact ? 8 : 14]} />
         <meshStandardMaterial
@@ -220,8 +181,138 @@ export function ForkliftModel({
           opacity={0.92}
         />
       </mesh>
+    </>
+  )
+}
 
-      {/* Mastro duplo, travessas e cilindro central. */}
+function AisleForkliftBody({
+  accent,
+  compact,
+  emergencyBraking,
+  faulted,
+}: {
+  accent: string
+  compact: boolean
+  emergencyBraking: boolean
+  faulted: boolean
+}) {
+  const wheelSegments = compact ? 8 : 14
+  const guardHeight = compact ? 1.68 : 1.78
+
+  return (
+    <>
+      <mesh position={[0, 0.25, 0.1]} castShadow receiveShadow>
+        <boxGeometry args={[0.9, 0.3, 1.3]} />
+        <meshStandardMaterial color="#334155" metalness={0.22} roughness={0.54} />
+      </mesh>
+      <mesh position={[0, 0.54, 0.42]} castShadow>
+        <boxGeometry args={[0.82, 0.66, 0.52]} />
+        <meshStandardMaterial color={accent} metalness={0.1} roughness={0.5} />
+      </mesh>
+      <mesh position={[0, 0.86, 0.28]} castShadow>
+        <boxGeometry args={[0.5, 0.18, 0.34]} />
+        <meshStandardMaterial color="#111827" roughness={0.74} />
+      </mesh>
+
+      {[-0.37, 0.37].map((x) => (
+        <mesh key={`outrigger-${x}`} position={[x, 0.16, -0.55]} castShadow>
+          <boxGeometry args={[0.13, 0.16, 1.15]} />
+          <meshStandardMaterial color="#475569" metalness={0.5} roughness={0.42} />
+        </mesh>
+      ))}
+
+      {[-0.36, 0.36].flatMap((x) =>
+        [-0.22, 0.46].map((z) => (
+          <mesh key={`aisle-guard-${x}-${z}`} position={[x, guardHeight / 2, z]}>
+            <boxGeometry args={[0.055, guardHeight, 0.055]} />
+            <meshStandardMaterial color="#263244" metalness={0.6} roughness={0.38} />
+          </mesh>
+        )),
+      )}
+      <mesh position={[0, guardHeight, 0.12]} castShadow>
+        <boxGeometry args={[0.82, 0.08, 0.82]} />
+        <meshStandardMaterial color="#475569" metalness={0.28} roughness={0.48} />
+      </mesh>
+
+      <Wheel x={-0.43} z={0.48} radius={0.2} width={0.14} segments={wheelSegments} />
+      <Wheel x={0.43} z={0.48} radius={0.2} width={0.14} segments={wheelSegments} />
+      <Wheel x={-0.4} z={-0.65} radius={0.15} width={0.12} segments={wheelSegments} />
+      <Wheel x={0.4} z={-0.65} radius={0.15} width={0.12} segments={wheelSegments} />
+
+      {[-0.28, 0.28].map((x) => (
+        <mesh key={`aisle-brake-${x}`} position={[x, 0.53, 0.7]}>
+          <boxGeometry args={[0.12, 0.09, 0.04]} />
+          <meshStandardMaterial
+            color={emergencyBraking || faulted ? '#ef4444' : '#450a0a'}
+            emissive={emergencyBraking || faulted ? '#ef4444' : '#000000'}
+            emissiveIntensity={emergencyBraking || faulted ? 3 : 0}
+            roughness={0.4}
+          />
+        </mesh>
+      ))}
+
+      <mesh position={[0, guardHeight + 0.11, 0.3]}>
+        <cylinderGeometry args={[0.07, 0.085, 0.14, compact ? 8 : 12]} />
+        <meshStandardMaterial
+          color="#f59e0b"
+          emissive="#f59e0b"
+          emissiveIntensity={faulted ? 3 : 0.5}
+          transparent
+          opacity={0.9}
+        />
+      </mesh>
+    </>
+  )
+}
+
+export function ForkliftModel({
+  carriageRef,
+  mastHeight = 2.4,
+  cargoVisible = false,
+  cargoColor = '#38bdf8',
+  compact = false,
+  reportRuntimePose = true,
+  accent = '#f97316',
+  emergencyBraking = false,
+  faulted = false,
+}: ForkliftModelProps) {
+  const rootRef = useRef<THREE.Group | null>(null)
+  const internalCarriageRef = useRef<THREE.Group | null>(null)
+  const resolvedCarriageRef = carriageRef ?? internalCarriageRef
+  const dockRx = isDockRxColor(accent)
+
+  useFrame(() => {
+    const root = rootRef.current
+    if (!reportRuntimePose || !root || !root.visible) return
+
+    root.getWorldPosition(WORLD_POSITION)
+    root.getWorldQuaternion(WORLD_QUATERNION)
+    WORLD_EULER.setFromQuaternion(WORLD_QUATERNION, 'YXZ')
+    setOperationalVehicleRuntimePose(
+      { x: WORLD_POSITION.x, y: 0.2, z: WORLD_POSITION.z },
+      WORLD_EULER.y,
+      'EMP-01 em execução',
+    )
+  })
+
+  return (
+    <group ref={rootRef}>
+      {dockRx ? (
+        <DockRxBody
+          accent={accent}
+          compact={compact}
+          emergencyBraking={emergencyBraking}
+          faulted={faulted}
+        />
+      ) : (
+        <AisleForkliftBody
+          accent={accent}
+          compact={compact}
+          emergencyBraking={emergencyBraking}
+          faulted={faulted}
+        />
+      )}
+
       {[-0.38, 0.38].map((x) => (
         <mesh key={`mast-${x}`} position={[x, mastHeight / 2, -0.92]} castShadow>
           <boxGeometry args={[0.12, mastHeight, 0.13]} />
