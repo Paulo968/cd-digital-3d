@@ -57,15 +57,19 @@ describe('monteCarloDispatch', () => {
       { seed: 'RX-REC|recebimento', rollouts: 120 },
     )
 
-    expect(selected?.candidateId).toBe('near-clear')
-    expect(selected?.visits).toBeGreaterThan(0)
-    expect(selected?.confidence).toBeGreaterThan(0)
-    expect(selected?.confidence).toBeLessThanOrEqual(1)
+    expect(selected.candidateId).toBe('near-clear')
+    expect(selected.visits).toBeGreaterThan(0)
+    expect(selected.confidence).toBeGreaterThan(0)
+    expect(selected.confidence).toBeLessThanOrEqual(1)
   })
 
-  it('não retorna decisão quando não existem alternativas', () => {
-    expect(
-      chooseMonteCarloDispatch([], { seed: 'sem-candidatos' }),
-    ).toBeUndefined()
+  it('retorna um estado vazio quando não existem alternativas', () => {
+    const selected = chooseMonteCarloDispatch([], {
+      seed: 'sem-candidatos',
+    })
+
+    expect(selected.candidateId).toBe('')
+    expect(selected.visits).toBe(0)
+    expect(selected.confidence).toBe(0)
   })
 })
