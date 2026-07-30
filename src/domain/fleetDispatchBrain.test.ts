@@ -54,6 +54,9 @@ describe('fleetDispatchBrain', () => {
     })
 
     expect(selected?.id).toBe(candidates[1].id)
+    const operation = useOperationsControlStore.getState()
+    expect(operation.pallets[candidates[1].palletId]).toBeDefined()
+    expect(operation.metrics.receivedPallets).toBe(0)
   })
 
   it('não despacha duas missões para o mesmo ponto crítico', () => {
