@@ -17,7 +17,9 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 - primeira onda de recebimento balanceada entre ruas diferentes;
 - visão ao vivo mostrando doca, missões em execução, tarefas aguardando, equipamentos e eventos recentes;
 - central operacional responsiva mostrando pedidos, missões, estoque monitorado por zona, frota, eventos de segurança e ciclo do caminhão;
-- justificativa legível para a escolha do veículo, considerando função, território, distância vazia, cabeceira, congestionamento e custo esperado;
+- justificativa legível para a escolha do veículo, considerando função, território, distância vazia, cabeceira, congestionamento, continuidade e alívio de gargalos;
+- cada equipamento atua como agente local, mantendo memória da função recente e avaliando suas próprias alternativas;
+- o objetivo coletivo prioriza liberar caminhão, descarga, buffers de rua e pré-embarque antes que virem gargalos;
 - planejador Monte Carlo com semente determinística, múltiplos rollouts e penalidades de fila, interferência, percurso vazio e risco;
 - fallback determinístico quando não existe alternativa suficiente para o planejador probabilístico;
 - oito cenários controláveis: normal, alta demanda, recebimento intenso, expedição intensa, corredor bloqueado, falha de equipamento, ruptura no picking e equipe reduzida;
@@ -29,13 +31,15 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 - quantidades dos pedidos e das expedições registradas na telemetria demonstrativa;
 - caminhão fecha a carroceria, sai da doca, permanece fora da operação interna e dá lugar ao próximo ciclo;
 - missões de carregamento aguardam enquanto não existe caminhão estacionado na doca;
-- fila visual de caminhões no cenário de expedição intensa no desktop;
+- fila visual de caminhões disponível tanto no desktop quanto no celular;
 - pallets expedidos desaparecem do inventário visual somente depois do carregamento e da liberação do caminhão;
 - pallets apoiados na descarga, buffers de entrada, buffers de retirada e pré-embarque ocupam espaço nos sensores e não podem ser atravessados pelos demais veículos;
+- o pallet-alvo deixa de atuar como obstáculo externo enquanto sua própria missão está em execução;
+- direito de passagem determinístico desfaz deadlocks quando dois equipamentos começam parados e próximos demais;
 - não existe mais reinicialização de onda: inventário, pedidos e missões continuam evoluindo durante a sessão;
-- frota industrial demonstrativa no desktop com RX de descarga, transpaleteiras de entrada e saída, empilhadeiras retráteis territoriais e RX de carregamento;
-- perfil compacto preservando todos os cinco papéis essenciais do fluxo;
-- despacho por prioridade, compatibilidade, território, distância vazia, congestionamento e avaliação Monte Carlo;
+- frota industrial completa em PC e celular: RX de descarga, transpaleteiras de entrada e saída, todas as empilhadeiras retráteis territoriais e RX de carregamento;
+- PC e celular executam a mesma quantidade de equipamentos, as mesmas missões, o mesmo ritmo operacional e as mesmas regras de segurança;
+- despacho por prioridade, compatibilidade, território, distância vazia, congestionamento, memória do agente e avaliação Monte Carlo;
 - veículos preferem cabeceiras diferentes e o roteador compara alternativas antes de iniciar a missão;
 - apenas pontos críticos da rota são bloqueados no despacho, permitindo paralelismo com segurança;
 - sensores virtuais medem a distância mínima durante o movimento sem atualizar React por quadro;
@@ -50,7 +54,7 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 - cada veículo parte da posição onde terminou a missão anterior, sem teletransporte;
 - aceleração, frenagem, orientação progressiva e curvas arredondadas;
 - geometria compartilhada entre longarinas, pallets, cargas e garfos, evitando cargas visualmente flutuantes;
-- qualidade adaptativa para reduzir sombras, resolução, veículos, frequência de eventos e detalhes em celulares;
+- qualidade adaptativa reduz sombras, resolução e tesselação no celular sem remover máquinas, pessoas, caminhões ou etapas do fluxo;
 - construtor guiado de layouts regulares;
 - proteção de estoque em alterações compatíveis de layout;
 - importação CSV validada contra o layout ativo;
@@ -64,7 +68,7 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 
 ## Como funciona o cérebro operacional
 
-O motor automático não usa um modelo generativo nem entrega o controle a uma decisão aleatória. Ele combina regras obrigatórias com um planejador Monte Carlo reproduzível:
+O motor automático não usa um modelo generativo nem entrega o controle a uma decisão aleatória. Ele combina regras obrigatórias, agentes locais e um planejador Monte Carlo reproduzível:
 
 1. observa em qual ponto visual cada pallet está;
 2. confirma se o pallet não possui outra missão pendente ou em execução;
@@ -72,15 +76,18 @@ O motor automático não usa um modelo generativo nem entrega o controle a uma d
 4. exige as passagens físicas do recebimento: caminhão, descarga, buffer da rua e endereço;
 5. exige as passagens físicas da expedição: endereço, buffer de retirada, pré-embarque e caminhão;
 6. seleciona somente equipamentos compatíveis com a etapa e o território;
-7. elimina antecipadamente destinos reservados e rotas com conflito crítico;
-8. gera candidatos considerando prioridade, distância vazia, função e congestionamento;
-9. executa rollouts Monte Carlo com variação de fila, interferência, percurso e risco futuro;
-10. escolhe a alternativa com menor custo robusto esperado e mantém semente estável para o mesmo estado;
-11. compara cabeceira esquerda, direita e caminho automático;
-12. mantém sensores, tempo para colisão e frenagem dinâmica durante o deslocamento;
-13. atualiza a posição visual do pallet somente nos eventos de coleta e depósito;
-14. impede carregamento enquanto o caminhão está fora da doca;
-15. remove a carga e sua ocupação do cenário quando o ciclo de saída é liberado.
+7. cada equipamento calcula sua distância, sua afinidade funcional, sua continuidade e seu risco local;
+8. o objetivo coletivo mede as filas de cada etapa e aumenta a prioridade de gargalos físicos;
+9. elimina antecipadamente destinos reservados e rotas com conflito crítico;
+10. gera candidatos considerando prioridade, distância vazia, função, congestionamento e memória do agente;
+11. executa rollouts Monte Carlo com variação de fila, interferência, percurso e risco futuro;
+12. escolhe a alternativa com menor custo robusto esperado e mantém semente estável para o mesmo estado;
+13. compara cabeceira esquerda, direita e caminho automático;
+14. mantém sensores, tempo para colisão e frenagem dinâmica durante o deslocamento;
+15. aplica direito de passagem quando dois agentes parados disputam o mesmo espaço inicial;
+16. atualiza a posição visual do pallet somente nos eventos de coleta e depósito;
+17. impede carregamento enquanto o caminhão está fora da doca;
+18. remove a carga e sua ocupação do cenário quando o ciclo de saída é liberado.
 
 ## Regra de confiança
 
