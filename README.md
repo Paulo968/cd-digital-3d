@@ -8,23 +8,25 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 
 - motor 3D otimizado com `InstancedMesh` para estruturas, posições, pallets e cargas;
 - modo operacional focado em leitura, consulta e análise;
-- modo realista com galpão, docas, pátio, caminhões e fila contínua de recebimento, armazenagem, reabastecimento e expedição;
+- modo realista com galpão, docas, pátio, caminhões e operação contínua de recebimento, armazenagem, reabastecimento e expedição;
+- cérebro operacional determinístico que observa o inventário visual e cria a próxima ação válida;
+- recebimentos automáticos com novos pallets quando existem posições livres;
+- pedidos automáticos selecionando pallets diferentes que realmente estão na reserva ou no picking;
+- pallets expedidos desaparecem do inventário visual somente depois do carregamento e da partida lógica do caminhão;
+- não existe mais reinicialização de onda: inventário, pedidos e missões continuam evoluindo durante a sessão;
 - frota demonstrativa com duas empilhadeiras e duas transpaleteiras no desktop;
 - perfil compacto com uma empilhadeira e uma transpaleteira, preservando o fluxo em celulares;
-- papéis separados para transporte de piso, armazenagem, reabastecimento e expedição;
-- controle preventivo de tráfego por reserva de corredores e cruzamentos antes do despacho;
-- missões com trajetos conflitantes aguardam, enquanto rotas independentes continuam em paralelo;
+- despacho por prioridade, compatibilidade, distância vazia e congestionamento;
+- veículos pares e ímpares preferem cabeceiras opostas e o roteador compara alternativas antes de iniciar a missão;
+- apenas pontos críticos da rota são bloqueados no despacho, permitindo paralelismo com segurança;
 - sensores virtuais medem a distância mínima durante o movimento sem atualizar React por quadro;
 - velocidade segura calculada conforme distância disponível, velocidade atual e desaceleração de emergência;
 - reação visual a pedestre no corredor, obstáculo temporário e equipamento avariado no meio da rota;
 - luz de freio e giroflex indicam frenagem emergencial ou falha temporária;
 - três posições de recebimento no desktop e seis posições visuais de carga dentro do caminhão;
-- pallets demonstrativos diferentes, coletados e depositados individualmente em espera, reserva, picking e carroceria;
-- tarefas dependentes: o próximo veículo só recebe o pallet depois da missão anterior terminar por completo;
 - posição e orientação persistentes da EMP-01 entre missões, modos e recarregamentos;
-- veículos mantêm o ponto final ao iniciar novas ondas de operação, sem retorno automático ao começo;
-- pose de execução em memória para que novos comandos partam do ponto atual sem provocar re-renderização por quadro;
-- aceleração, frenagem, orientação progressiva e curvas arredondadas na movimentação dos veículos;
+- cada veículo parte da posição onde terminou a missão anterior, sem teletransporte;
+- aceleração, frenagem, orientação progressiva e curvas arredondadas;
 - geometria compartilhada entre longarinas, pallets, cargas e garfos, evitando cargas visualmente flutuantes;
 - qualidade adaptativa para reduzir sombras, resolução, veículos, frequência de eventos e detalhes em celulares;
 - construtor guiado de layouts regulares;
@@ -35,17 +37,31 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 - histórico local de eventos de rastreabilidade;
 - movimentação interna com origem, destino, operador, documento e confirmação física;
 - contagem física separada do saldo meramente sistêmico;
-- lista de tarefas, bloqueio de cabeceiras, rota de referência, sequência heurística e animação da empilhadeira;
-- simulação visual de coleta, transporte e deposição de um pallet entre endereços;
+- simulação visual dirigida de coleta, transporte e deposição de um pallet entre endereços;
 - persistência local no navegador para continuar testes.
+
+## Como funciona o cérebro operacional
+
+O motor automático não usa um modelo generativo nem toma decisões imprevisíveis. Ele aplica regras e pontua alternativas:
+
+1. observa em qual ponto visual cada pallet está;
+2. confirma se o pallet não possui outra missão pendente ou em execução;
+3. procura uma origem ocupada e um destino livre;
+4. cria a missão adequada para recebimento, armazenagem, reposição ou expedição;
+5. escolhe o veículo compatível mais próximo;
+6. acrescenta penalidade para rotas congestionadas;
+7. compara cabeceira esquerda, direita e caminho automático;
+8. mantém sensores e frenagem dinâmica durante o deslocamento;
+9. atualiza a posição visual do pallet somente nos eventos de coleta e depósito;
+10. remove a carga do cenário quando a partida lógica do caminhão é concluída.
 
 ## Regra de confiança
 
 O 3D representa os dados carregados. Importação de ERP/WMS é tratada como informação sistêmica. Uma posição somente recebe confirmação física após uma ação explícita de conferência ou movimentação confirmada pelo operador.
 
-A sequência heurística busca reduzir a distância em relação à ordem informada, mas não garante o ótimo global. Distâncias calculadas não representam tempo, produtividade ou economia financeira comprovados.
+O inventário automático do modo realista é isolado e exclusivamente demonstrativo. Entradas, pedidos, missões e expedições automáticas não alteram o estoque oficial, não criam eventos de rastreabilidade, não confirmam movimentação física e não representam comando enviado a equipamento real.
 
-A operação automática do modo realista é exclusivamente demonstrativa: não altera estoque, não gera evento e não representa comando de equipamento físico. A fila visual distribui pallets entre veículos compatíveis, reserva previamente os trajetos, reage a riscos virtuais e mantém cada máquina onde concluiu a entrega, sem fabricar confirmação física.
+A pontuação do cérebro procura uma solução operacional coerente, mas não garante o ótimo global. Distâncias calculadas não representam tempo, produtividade ou economia financeira comprovados.
 
 Os sensores atuais usam posições e volumes simplificados dentro da simulação. Eles demonstram lógica de parada e retomada, mas não substituem scanner a laser, câmera, controlador de segurança, certificação ou redundância exigidos por equipamentos autônomos reais.
 
