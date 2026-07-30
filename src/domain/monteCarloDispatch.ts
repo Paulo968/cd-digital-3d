@@ -97,15 +97,26 @@ function mean(stats: CandidateStats): number {
 function deviation(stats: CandidateStats): number {
   if (stats.visits <= 1) return 0
   const average = mean(stats)
-  const variance = Math.max(0, stats.totalSquares / stats.visits - average * average)
+  const variance = Math.max(
+    0,
+    stats.totalSquares / stats.visits - average * average,
+  )
   return Math.sqrt(variance)
 }
 
 export function chooseMonteCarloDispatch(
   candidates: MonteCarloDispatchCandidate[],
   options: MonteCarloDispatchOptions,
-): MonteCarloDispatchResult | undefined {
-  if (candidates.length === 0) return undefined
+): MonteCarloDispatchResult {
+  if (candidates.length === 0) {
+    return {
+      candidateId: '',
+      expectedCost: Number.POSITIVE_INFINITY,
+      robustCost: Number.POSITIVE_INFINITY,
+      visits: 0,
+      confidence: 0,
+    }
+  }
 
   const ordered = [...candidates].sort(
     (left, right) =>
@@ -117,7 +128,9 @@ export function chooseMonteCarloDispatch(
   const horizon = Math.max(1, options.horizon ?? 4)
   const exploration = Math.max(0, options.exploration ?? 46)
   const random = randomFromSeed(
-    seedFromText(`${options.seed}|${ordered.map((candidate) => candidate.id).join('|')}`),
+    seedFromText(
+      `${options.seed}|${ordered.map((candidate) => candidate.id).join('|')}`,
+    ),
   )
   const stats: CandidateStats[] = ordered.map((candidate) => ({
     candidate,
@@ -158,7 +171,8 @@ export function chooseMonteCarloDispatch(
   })[0]
   const expectedCost = mean(selected)
   const robustCost = expectedCost + deviation(selected) * 0.32
-  const confidence = 1 / (1 + deviation(selected) / Math.max(1, Math.abs(expectedCost)))
+  const confidence =
+    1 / (1 + deviation(selected) / Math.max(1, Math.abs(expectedCost)))
 
   return {
     candidateId: selected.candidate.id,
