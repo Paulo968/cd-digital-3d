@@ -1,3 +1,4 @@
+import { Text } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
@@ -21,7 +22,7 @@ interface SafetyScenarioActorsProps {
   compact: boolean
 }
 
-function PedestrianVisual() {
+function WorkerVisual({ vest = '#f97316' }: { vest?: string }) {
   return (
     <group>
       <mesh position={[0, 1.52, 0]} castShadow>
@@ -30,7 +31,7 @@ function PedestrianVisual() {
       </mesh>
       <mesh position={[0, 1.02, 0]} castShadow>
         <boxGeometry args={[0.38, 0.72, 0.24]} />
-        <meshStandardMaterial color="#f97316" roughness={0.72} />
+        <meshStandardMaterial color={vest} roughness={0.72} />
       </mesh>
       {[-0.11, 0.11].map((x) => (
         <mesh key={`leg-${x}`} position={[x, 0.42, 0]} castShadow>
@@ -38,6 +39,37 @@ function PedestrianVisual() {
           <meshStandardMaterial color="#1e293b" roughness={0.84} />
         </mesh>
       ))}
+    </group>
+  )
+}
+
+function WorkPost({
+  x,
+  z,
+  label,
+  vest,
+}: {
+  x: number
+  z: number
+  label: string
+  vest: string
+}) {
+  return (
+    <group position={[x, 0, z]}>
+      <WorkerVisual vest={vest} />
+      <Text
+        position={[0, 2.05, 0]}
+        fontSize={0.28}
+        color="#e0f2fe"
+        anchorX="center"
+        anchorY="middle"
+      >
+        {label}
+      </Text>
+      <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[0.42, 0.58, 24]} />
+        <meshBasicMaterial color="#38bdf8" transparent opacity={0.5} />
+      </mesh>
     </group>
   )
 }
@@ -73,6 +105,31 @@ function TemporaryObstacle({ compact }: { compact: boolean }) {
   )
 }
 
+function SafetyCrossing({
+  startX,
+  endX,
+  z,
+}: {
+  startX: number
+  endX: number
+  z: number
+}) {
+  const width = Math.max(2, endX - startX)
+  return (
+    <group>
+      {Array.from({ length: 8 }, (_, index) => {
+        const x = THREE.MathUtils.lerp(startX, endX, index / 7)
+        return (
+          <mesh key={index} position={[x, 0.027, z]} rotation={[-Math.PI / 2, 0, 0]}>
+            <planeGeometry args={[width / 16, 1.05]} />
+            <meshBasicMaterial color="#f8fafc" transparent opacity={0.62} />
+          </mesh>
+        )
+      })}
+    </group>
+  )
+}
+
 export function SafetyScenarioActors({
   centerX,
   receivingX,
@@ -86,7 +143,6 @@ export function SafetyScenarioActors({
   const obstacleActiveRef = useRef(false)
   const activeFaultRef = useRef<string | null>(null)
   const timeoutIdsRef = useRef<number[]>([])
-  const intervalIdsRef = useRef<number[]>([])
   const manualTokensRef = useRef({ pedestrian: 0, obstacle: 0, failure: 0 })
   const [pedestrianActive, setPedestrianActive] = useState(false)
   const [obstacleActive, setObstacleActive] = useState(false)
@@ -94,9 +150,9 @@ export function SafetyScenarioActors({
   const safetyTokens = useOperationsControlStore((state) => state.safetyTokens)
   const { invalidate } = useThree()
 
-  const pedestrianStartX = Math.min(receivingX, shippingX) - 2.2
-  const pedestrianEndX = Math.max(receivingX, shippingX) + 2.2
-  const crossingZ = frontZ - 8.5
+  const pedestrianStartX = Math.min(receivingX, shippingX) - 1.8
+  const pedestrianEndX = Math.max(receivingX, shippingX) + 1.8
+  const crossingZ = frontZ - 7.6
   const obstaclePoint = useMemo(
     () => ({ x: centerX, y: 0.2, z: frontZ - 10.5 }),
     [centerX, frontZ],
@@ -110,9 +166,7 @@ export function SafetyScenarioActors({
 
   const clearSchedules = useCallback(() => {
     timeoutIdsRef.current.forEach((id) => window.clearTimeout(id))
-    intervalIdsRef.current.forEach((id) => window.clearInterval(id))
     timeoutIdsRef.current = []
-    intervalIdsRef.current = []
   }, [])
 
   const startPedestrian = useCallback(() => {
@@ -121,8 +175,8 @@ export function SafetyScenarioActors({
     pedestrianProgressRef.current = 0
     setPedestrianActive(true)
     recordSafetyEvent(
-      'Pedestre no corredor',
-      'Sensores virtuais passam a limitar a velocidade dos veículos na faixa.',
+      'Travessia autorizada',
+      'Um colaborador iniciou a travessia na faixa sinalizada; a frota deve ceder passagem.',
     )
     invalidate()
   }, [invalidate])
@@ -136,7 +190,7 @@ export function SafetyScenarioActors({
 
   const startObstacle = useCallback(
     (persistent = false) => {
-      if (obstacleActiveRef.current && persistent) return
+      if (obstacleActiveRef.current) return
       obstacleActiveRef.current = true
       setObstacleActive(true)
       upsertRuntimeHazard({
@@ -147,14 +201,13 @@ export function SafetyScenarioActors({
         active: true,
       })
       recordSafetyEvent(
-        persistent ? 'Corredor bloqueado' : 'Obstáculo inesperado',
+        persistent ? 'Corredor bloqueado' : 'Obstáculo controlado',
         persistent
-          ? 'A barreira permanece ativa até a troca do cenário.'
-          : 'A barreira surgiu depois do despacho e exige frenagem dinâmica.',
+          ? 'A barreira permanece ativa enquanto o cenário de corredor bloqueado estiver selecionado.'
+          : 'A barreira foi inserida pelo operador para validar a frenagem dinâmica.',
       )
       invalidate()
-      if (persistent) return
-      later(clearObstacle, compact ? 4200 : 5200)
+      if (!persistent) later(clearObstacle, compact ? 4200 : 5200)
     },
     [clearObstacle, compact, invalidate, later, obstaclePoint],
   )
@@ -162,9 +215,12 @@ export function SafetyScenarioActors({
   const startBreakdown = useCallback(() => {
     const vehicleId = chooseMovingVehicleForFault()
     if (!vehicleId || activeFaultRef.current) return
-
     activeFaultRef.current = vehicleId
     setRuntimeVehicleFault(vehicleId, true)
+    recordSafetyEvent(
+      'Avaria controlada',
+      `${vehicleId} foi colocado em falha para validar parada, isolamento e retomada.`,
+    )
     invalidate()
     later(() => {
       setRuntimeVehicleFault(vehicleId, false)
@@ -177,41 +233,12 @@ export function SafetyScenarioActors({
     clearSchedules()
     clearObstacle()
     const profile = currentScenarioProfile()
-
-    later(startPedestrian, compact ? 6500 : 4200)
     if (profile.persistentObstacle) {
-      later(() => startObstacle(true), compact ? 3500 : 2400)
-    } else {
-      later(() => startObstacle(false), compact ? 12500 : 9000)
+      later(() => startObstacle(true), 650)
     }
-    later(
-      startBreakdown,
-      profile.frequentBreakdown ? 6200 : compact ? 19000 : 14500,
-    )
-
-    intervalIdsRef.current.push(
-      window.setInterval(startPedestrian, compact ? 26000 : 19000),
-    )
-    if (!profile.persistentObstacle) {
-      intervalIdsRef.current.push(
-        window.setInterval(
-          () => startObstacle(false),
-          compact ? 34000 : 25000,
-        ),
-      )
+    if (profile.frequentBreakdown) {
+      later(startBreakdown, compact ? 5200 : 3800)
     }
-    intervalIdsRef.current.push(
-      window.setInterval(
-        startBreakdown,
-        profile.frequentBreakdown
-          ? compact
-            ? 14500
-            : 10500
-          : compact
-            ? 42000
-            : 31000,
-      ),
-    )
 
     return () => {
       clearSchedules()
@@ -232,7 +259,6 @@ export function SafetyScenarioActors({
     scenario,
     startBreakdown,
     startObstacle,
-    startPedestrian,
   ])
 
   useEffect(() => {
@@ -242,17 +268,23 @@ export function SafetyScenarioActors({
     }
     if (safetyTokens.obstacle !== manualTokensRef.current.obstacle) {
       manualTokensRef.current.obstacle = safetyTokens.obstacle
-      startObstacle(currentScenarioProfile().persistentObstacle)
+      if (obstacleActiveRef.current) clearObstacle()
+      else startObstacle(currentScenarioProfile().persistentObstacle)
     }
     if (safetyTokens.failure !== manualTokensRef.current.failure) {
       manualTokensRef.current.failure = safetyTokens.failure
       startBreakdown()
     }
-  }, [safetyTokens, startBreakdown, startObstacle, startPedestrian])
+  }, [
+    clearObstacle,
+    safetyTokens,
+    startBreakdown,
+    startObstacle,
+    startPedestrian,
+  ])
 
   useFrame((_, delta) => {
     if (!pedestrianActiveRef.current) return
-
     pedestrianProgressRef.current = Math.min(
       1,
       pedestrianProgressRef.current + delta / (compact ? 4.8 : 3.9),
@@ -284,9 +316,30 @@ export function SafetyScenarioActors({
 
   return (
     <group>
+      <SafetyCrossing
+        startX={pedestrianStartX}
+        endX={pedestrianEndX}
+        z={crossingZ}
+      />
+      {!compact && (
+        <>
+          <WorkPost
+            x={receivingX - 3.7}
+            z={frontZ - 3.2}
+            label="Conferente do recebimento"
+            vest="#f97316"
+          />
+          <WorkPost
+            x={shippingX + 3.7}
+            z={frontZ - 3.2}
+            label="Auxiliar de expedição"
+            vest="#eab308"
+          />
+        </>
+      )}
       {pedestrianActive && (
         <group ref={pedestrianRef}>
-          <PedestrianVisual />
+          <WorkerVisual vest="#22c55e" />
         </group>
       )}
       {obstacleActive && (
