@@ -15,6 +15,7 @@ import type { WarehouseLocation } from '../domain/warehouse'
 import { RealisticOperationsMenu } from '../features/RealisticOperationsMenu'
 import { FleetOperation } from './FleetOperation'
 import { LiveTruck } from './LiveTruck'
+import { PalletCollisionRegistry } from './PalletCollisionRegistry'
 import { SafetyScenarioActors } from './SafetyScenarioActors'
 
 interface LayoutBounds {
@@ -372,6 +373,7 @@ export function RealisticEnvironment({
       )}
       {automaticOperationVisible && (
         <>
+          <PalletCollisionRegistry plan={plan} />
           <FleetOperation
             layout={layout}
             locations={locations}
