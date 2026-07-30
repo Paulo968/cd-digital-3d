@@ -1,4 +1,6 @@
 import type { WarehouseLayout } from './layout'
+import type { OperationZone } from './operationsControl'
+import { palletQuantity, productForPallet } from './operationsControl'
 import type {
   FleetMission,
   FleetVehicleDefinition,
@@ -71,6 +73,65 @@ function decisionReason(
   )} m até a origem, preferência pela cabeceira ${lane} e ${congestionText}.`
 }
 
+function sourceZone(mission: FleetMission): OperationZone {
+  const normalized = `${mission.source.id} ${mission.source.label}`.toLocaleLowerCase(
+    'pt-BR',
+  )
+  if (normalized.includes('receiving:') || normalized.includes('recebimento')) {
+    return 'receiving'
+  }
+  if (normalized.includes('staging:') || normalized.includes('espera')) {
+    return 'staging'
+  }
+  if (normalized.includes('truck:') || normalized.includes('caminhão')) {
+    return 'truck'
+  }
+  if (normalized.includes('picking')) return 'picking'
+  if (normalized.includes('address:') || normalized.includes('reserva')) {
+    return 'reserve'
+  }
+  return 'transit'
+}
+
+function registerObservedPallet(mission: FleetMission, at = Date.now()): void {
+  const operation = useOperationsControlStore.getState()
+  if (operation.pallets[mission.palletId]) return
+  const product = productForPallet(mission.palletId)
+  const quantity = palletQuantity(mission.palletId)
+  const zone = sourceZone(mission)
+
+  useOperationsControlStore.setState((state) => {
+    if (state.pallets[mission.palletId]) return state
+    const pallets = {
+      ...state.pallets,
+      [mission.palletId]: {
+        id: mission.palletId,
+        sku: product.sku,
+        description: product.description,
+        units: quantity.units,
+        capacity: quantity.capacity,
+        reorderPoint: quantity.reorderPoint,
+        zone,
+        stopId: mission.source.id,
+        receivedAt: at,
+        updatedAt: at,
+      },
+    }
+    return {
+      pallets,
+      metrics: {
+        ...state.metrics,
+        reserveUnits:
+          state.metrics.reserveUnits + (zone === 'reserve' ? quantity.units : 0),
+        pickingUnits:
+          state.metrics.pickingUnits + (zone === 'picking' ? quantity.units : 0),
+        truckUnits:
+          state.metrics.truckUnits + (zone === 'truck' ? quantity.units : 0),
+      },
+    }
+  })
+}
+
 export function chooseBrainMissionForVehicle(
   context: DispatchContext,
 ): FleetMission | undefined {
@@ -115,6 +176,7 @@ export function chooseBrainMissionForVehicle(
 
   if (!selected) return undefined
 
+  registerObservedPallet(selected.mission)
   recordOperationMission({
     id: selected.mission.id,
     palletId: selected.mission.palletId,
