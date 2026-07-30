@@ -38,8 +38,8 @@ export function removeRuntimeHazard(hazardId: string): void {
   hazards.delete(hazardId)
 }
 
-export function readRuntimeHazards(): DynamicHazard[] {
-  return [...hazards.values()]
+export function readRuntimeHazards(): Iterable<DynamicHazard> {
+  return hazards.values()
 }
 
 export function setRuntimeVehicleFault(vehicleId: string, faulted: boolean): void {
@@ -52,9 +52,12 @@ export function isRuntimeVehicleFaulted(vehicleId: string): boolean {
 }
 
 export function chooseMovingVehicleForFault(): string | null {
-  const candidate = [...vehicles.values()]
-    .filter((vehicle) => vehicle.active && vehicle.speed > 0.55)
-    .sort((left, right) => right.speed - left.speed)[0]
+  let candidate: RuntimeVehicleState | null = null
+
+  for (const vehicle of vehicles.values()) {
+    if (!vehicle.active || vehicle.speed <= 0.55) continue
+    if (!candidate || vehicle.speed > candidate.speed) candidate = vehicle
+  }
 
   return candidate?.id ?? null
 }
