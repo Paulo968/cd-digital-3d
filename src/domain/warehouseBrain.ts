@@ -302,8 +302,14 @@ function createMission(
   }
 }
 
-function pickingUnits(): number {
-  return useOperationsControlStore.getState().metrics.pickingUnits
+function quantitativePickingUnits(): number {
+  const operation = useOperationsControlStore.getState()
+  const hasTrackedPicking = Object.values(operation.pallets).some(
+    (pallet) => pallet.zone === 'picking',
+  )
+  return hasTrackedPicking
+    ? operation.metrics.pickingUnits
+    : Number.POSITIVE_INFINITY
 }
 
 function nextOperationalMission(
@@ -391,7 +397,12 @@ function nextOperationalMission(
       Math.max(1, Math.ceil(basePickingTarget * profile.pickingTargetMultiplier)),
     )
     const targetUnits = pickingTarget * 72
-    if (pickingOccupancy >= pickingTarget && pickingUnits() >= targetUnits) return
+    if (
+      pickingOccupancy >= pickingTarget &&
+      quantitativePickingUnits() >= targetUnits
+    ) {
+      return
+    }
 
     const destination = freeStop(addressStops.picking, occupied, reserved)
     if (destination) {
