@@ -1,8 +1,11 @@
 import { useEffect } from 'react'
 import {
   SCENARIO_PROFILES,
+  type OperationMissionStatus,
+  type OperationOrderStatus,
   type OperationScenario,
   type OperationVehicleStatus,
+  type OperationZone,
   type TruckCyclePhase,
 } from '../domain/operationsControl'
 import {
@@ -17,6 +20,30 @@ const VEHICLE_STATUS_LABEL: Record<OperationVehicleStatus, string> = {
   braking: 'Parada de segurança',
   fault: 'Avariado',
   unavailable: 'Indisponível',
+}
+
+const ORDER_STATUS_LABEL: Record<OperationOrderStatus, string> = {
+  waiting: 'Aguardando',
+  assigned: 'Designado',
+  loading: 'Carregando',
+  shipped: 'Expedido',
+}
+
+const MISSION_STATUS_LABEL: Record<OperationMissionStatus, string> = {
+  queued: 'Na fila',
+  running: 'Em execução',
+  completed: 'Concluída',
+  waiting: 'Aguardando',
+}
+
+const ZONE_LABEL: Record<OperationZone, string> = {
+  receiving: 'Recebimento',
+  staging: 'Espera',
+  reserve: 'Reserva',
+  picking: 'Picking',
+  truck: 'Caminhão',
+  transit: 'Em trânsito',
+  shipped: 'Expedido',
 }
 
 const TRUCK_PHASE_LABEL: Record<TruckCyclePhase, string> = {
@@ -217,7 +244,7 @@ export function OperationsControlPanel() {
                   <article key={pallet.id}>
                     <div>
                       <strong>{pallet.id}</strong>
-                      <span>{pallet.zone}</span>
+                      <span>{ZONE_LABEL[pallet.zone]}</span>
                     </div>
                     <small>
                       SKU {pallet.sku} · {pallet.units}/{pallet.capacity} un. · ponto de
@@ -242,7 +269,7 @@ export function OperationsControlPanel() {
                   <article key={order.id}>
                     <div>
                       <strong>{order.id}</strong>
-                      <span>{order.status}</span>
+                      <span>{ORDER_STATUS_LABEL[order.status]}</span>
                     </div>
                     <small>
                       {order.quantity} un. · SKU {order.sku} · {order.palletId}
@@ -266,7 +293,7 @@ export function OperationsControlPanel() {
                   <article key={mission.id}>
                     <div>
                       <strong>{mission.palletId}</strong>
-                      <span>{mission.status}</span>
+                      <span>{MISSION_STATUS_LABEL[mission.status]}</span>
                     </div>
                     <small>
                       {mission.sourceLabel} → {mission.destinationLabel}
