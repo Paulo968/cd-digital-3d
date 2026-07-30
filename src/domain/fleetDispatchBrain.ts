@@ -35,8 +35,16 @@ interface ScoredMission {
   emptyTravel: number
   congestion: number
   rolePenalty: number
+  collectiveRelief: number
+  continuityBonus: number
   expectedCost?: number
   confidence?: number
+}
+
+interface AgentMemory {
+  assignments: number
+  lastRole?: FleetMissionRole
+  lastDestinationId?: string
 }
 
 const ROLE_LABEL: Record<FleetMissionRole, string> = {
@@ -45,6 +53,8 @@ const ROLE_LABEL: Record<FleetMissionRole, string> = {
   replenishment: 'movimentação interna e pré-embarque',
   shipping: 'carregamento do caminhão',
 }
+
+const agentMemory = new Map<string, AgentMemory>()
 
 function distance(left: WorldPoint, right: WorldPoint): number {
   return Math.hypot(left.x - right.x, left.z - right.z)
@@ -78,6 +88,59 @@ function overlapCount(left: Iterable<string>, right: Set<string>): number {
   return count
 }
 
+function roleBacklog(missions: FleetMission[]): Record<FleetMissionRole, number> {
+  const result: Record<FleetMissionRole, number> = {
+    'inbound-transfer': 0,
+    putaway: 0,
+    replenishment: 0,
+    shipping: 0,
+  }
+  missions.forEach((mission) => {
+    result[mission.role] += 1
+  })
+  return result
+}
+
+function pipelineRelief(mission: FleetMission): number {
+  const source = `${mission.source.id} ${mission.source.label}`.toLocaleLowerCase(
+    'pt-BR',
+  )
+
+  // Quanto mais próximo de um gargalo físico, maior a urgência coletiva.
+  if (source.includes('shipping-buffer:') || source.includes('pré-embarque')) {
+    return 900
+  }
+  if (source.includes('inbound-truck:')) return 820
+  if (source.includes('receiving:') || source.includes('descarga')) return 760
+  if (source.includes('outbound-buffer:')) return 720
+  if (source.includes('aisle-buffer:')) return 680
+  if (mission.priority === 0) return 260
+  return 0
+}
+
+function agentContinuityBonus(
+  vehicle: FleetVehicleDefinition,
+  mission: FleetMission,
+): number {
+  const memory = agentMemory.get(vehicle.id)
+  if (!memory) return 0
+
+  let bonus = 0
+  if (memory.lastRole === mission.role) bonus += 24
+  if (memory.lastDestinationId === mission.source.id) bonus += 180
+  return bonus
+}
+
+function collectiveDescription(selected: ScoredMission): string {
+  if (selected.collectiveRelief >= 1_000) {
+    return 'alivia um gargalo crítico e mantém o fluxo encadeado'
+  }
+  if (selected.collectiveRelief >= 500) {
+    return 'libera buffer e reduz a fila da etapa seguinte'
+  }
+  return 'equilibra a carga de trabalho da operação'
+}
+
 function decisionReason(
   vehicle: FleetVehicleDefinition,
   selected: ScoredMission,
@@ -90,12 +153,16 @@ function decisionReason(
   const monteCarloText =
     selected.expectedCost === undefined
       ? ''
-      : ` Planejador Monte Carlo: custo esperado ${selected.expectedCost.toFixed(
+      : ` Monte Carlo: custo esperado ${selected.expectedCost.toFixed(
           1,
         )}, confiança ${Math.round((selected.confidence ?? 0) * 100)}%.`
-  return `${vehicle.label}: autorizado para ${ROLE_LABEL[selected.mission.role]}, ${selected.emptyTravel.toFixed(
+  return `${vehicle.label}: agente local autorizado para ${ROLE_LABEL[
+    selected.mission.role
+  ]}, ${selected.emptyTravel.toFixed(
     1,
-  )} m até a origem, cabeceira ${lane} e ${congestionText}.${monteCarloText}`
+  )} m até a origem, cabeceira ${lane} e ${congestionText}. Objetivo coletivo: ${collectiveDescription(
+    selected,
+  )}.${monteCarloText}`
 }
 
 function sourceZone(mission: FleetMission): OperationZone {
@@ -170,16 +237,7 @@ function registerObservedPallet(mission: FleetMission, at = Date.now()): void {
   })
 }
 
-export function chooseBrainMissionForVehicle(
-  context: DispatchContext,
-): FleetMission | undefined {
-  registerOperationVehicle({
-    id: context.vehicle.id,
-    label: context.vehicle.label,
-    kind: context.vehicle.kind,
-  })
-  if (!operationVehicleIsAvailable(context.vehicle.id)) return undefined
-
+function scoreCandidates(context: DispatchContext): ScoredMission[] {
   const truckDocked = useOperationsControlStore.getState().truck.phase === 'docked'
   const activeTraffic = new Set(
     context.activeMissions.flatMap((mission) => mission.trafficCells),
@@ -187,8 +245,9 @@ export function chooseBrainMissionForVehicle(
   const activeCritical = new Set(
     context.activeMissions.flatMap((mission) => [...criticalCells(mission)]),
   )
+  const backlog = roleBacklog(context.availableMissions)
 
-  const candidates = context.availableMissions
+  return context.availableMissions
     .filter(
       (mission) =>
         !context.reservedMissionIds.has(mission.id) &&
@@ -203,16 +262,42 @@ export function chooseBrainMissionForVehicle(
       const emptyTravel = distance(context.vehiclePoint, mission.source.access)
       const congestion = overlapCount(mission.trafficCells, activeTraffic)
       const rolePenalty = context.vehicle.roles.indexOf(mission.role) * 4
+      const backlogRelief = Math.min(6, backlog[mission.role]) * 115
+      const continuityBonus = agentContinuityBonus(context.vehicle, mission)
+      const collectiveRelief = backlogRelief + pipelineRelief(mission)
       const score =
         mission.priority * 10_000 +
         emptyTravel * 12 +
         congestion * 45 +
         rolePenalty +
-        mission.sequence * 0.001
-      return { mission, score, emptyTravel, congestion, rolePenalty }
+        mission.sequence * 0.001 -
+        collectiveRelief -
+        continuityBonus
+      return {
+        mission,
+        score,
+        emptyTravel,
+        congestion,
+        rolePenalty,
+        collectiveRelief,
+        continuityBonus,
+      }
     })
+}
 
+export function chooseBrainMissionForVehicle(
+  context: DispatchContext,
+): FleetMission | undefined {
+  registerOperationVehicle({
+    id: context.vehicle.id,
+    label: context.vehicle.label,
+    kind: context.vehicle.kind,
+  })
+  if (!operationVehicleIsAvailable(context.vehicle.id)) return undefined
+
+  const candidates = scoreCandidates(context)
   const seed = [
+    'collective-v2',
     context.vehicle.id,
     context.vehiclePoint.x.toFixed(2),
     context.vehiclePoint.z.toFixed(2),
@@ -232,16 +317,16 @@ export function chooseBrainMissionForVehicle(
     })),
     {
       seed,
-      rollouts: candidates.length <= 2 ? 64 : 96,
-      horizon: 4,
+      rollouts: candidates.length <= 2 ? 72 : 128,
+      horizon: 5,
     },
   )
   const deterministicFallback = [...candidates].sort(
     (left, right) => left.score - right.score,
   )[0]
-  const monteCarloSelected = monteCarlo
-    ? candidates.find((candidate) => candidate.mission.id === monteCarlo.candidateId)
-    : undefined
+  const monteCarloSelected = candidates.find(
+    (candidate) => candidate.mission.id === monteCarlo.candidateId,
+  )
   const selected = monteCarloSelected
     ? {
         ...monteCarloSelected,
@@ -271,6 +356,12 @@ export function chooseBrainMissionForVehicle(
     selected.mission.id,
     decisionReason(context.vehicle, selected),
   )
+  const memory = agentMemory.get(context.vehicle.id) ?? { assignments: 0 }
+  agentMemory.set(context.vehicle.id, {
+    assignments: memory.assignments + 1,
+    lastRole: selected.mission.role,
+    lastDestinationId: selected.mission.destination.id,
+  })
   return selected.mission
 }
 
