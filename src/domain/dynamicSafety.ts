@@ -16,7 +16,7 @@ export interface SafetyProbeInput {
   facing: number
   speed: number
   vehicleRadius: number
-  hazards: DynamicHazard[]
+  hazards: Iterable<DynamicHazard>
   brakingDeceleration: number
   reactionBuffer: number
   lateralMargin: number
@@ -56,8 +56,8 @@ export function probeDynamicSafety(input: SafetyProbeInput): SafetyProbeResult {
       }
     | undefined
 
-  input.hazards.forEach((hazard) => {
-    if (!hazard.active || hazard.id === input.vehicleId) return
+  for (const hazard of input.hazards) {
+    if (!hazard.active || hazard.id === input.vehicleId) continue
 
     const deltaX = hazard.point.x - input.point.x
     const deltaZ = hazard.point.z - input.point.z
@@ -65,7 +65,7 @@ export function probeDynamicSafety(input: SafetyProbeInput): SafetyProbeResult {
     const lateral = Math.abs(deltaX * -headingZ + deltaZ * headingX)
     const clearance = input.vehicleRadius + hazard.radius + input.lateralMargin
 
-    if (forward < -input.vehicleRadius || lateral > clearance) return
+    if (forward < -input.vehicleRadius || lateral > clearance) continue
 
     const freeDistance = Math.max(
       0,
@@ -74,7 +74,7 @@ export function probeDynamicSafety(input: SafetyProbeInput): SafetyProbeResult {
     if (!nearest || freeDistance < nearest.freeDistance) {
       nearest = { hazard, forward, lateral, freeDistance }
     }
-  })
+  }
 
   const requiredStoppingDistance = stoppingDistance(
     input.speed,
