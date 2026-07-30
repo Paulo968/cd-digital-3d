@@ -82,22 +82,30 @@ describe('industrialFlow', () => {
     expect(palletMissions[2].role).toBe('putaway')
   })
 
+  it('distribui a primeira descarga por ruas diferentes', () => {
+    const aisles = plan.missions
+      .filter((mission) => mission.id.startsWith('street-putaway-'))
+      .map((mission) => mission.destination.address?.split('-')[0])
+
+    expect(aisles.slice(0, 4)).toEqual(['A', 'B', 'C', 'D'])
+  })
+
   it('impede uma empilhadeira de atender uma rua fora da sua responsabilidade', () => {
     const missionA = plan.missions.find(
       (mission) =>
         mission.role === 'putaway' && mission.destination.address?.startsWith('A-'),
     )
-    const missionE = plan.missions.find(
+    const missionC = plan.missions.find(
       (mission) =>
-        mission.role === 'putaway' && mission.destination.address?.startsWith('E-'),
+        mission.role === 'putaway' && mission.destination.address?.startsWith('C-'),
     )
 
     expect(missionA).toBeDefined()
-    expect(missionE).toBeDefined()
+    expect(missionC).toBeDefined()
     expect(vehicleCoversMission('EMP-AB', missionA!)).toBe(true)
     expect(vehicleCoversMission('EMP-CD', missionA!)).toBe(false)
-    expect(vehicleCoversMission('EMP-EF', missionE!)).toBe(true)
-    expect(vehicleCoversMission('EMP-AB', missionE!)).toBe(false)
+    expect(vehicleCoversMission('EMP-CD', missionC!)).toBe(true)
+    expect(vehicleCoversMission('EMP-AB', missionC!)).toBe(false)
   })
 
   it('faz o cérebro respeitar todas as passagens físicas do recebimento', () => {
