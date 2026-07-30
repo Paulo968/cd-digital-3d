@@ -19,21 +19,21 @@ O painel não calcula números paralelos nem inventa indicadores a partir da ani
 - pallet embarcado;
 - caminhão liberado e novo ciclo iniciado.
 
-As métricas são recalculadas a partir dos registros atuais de pallets, pedidos, missões e veículos.
+As métricas são recalculadas a partir dos pallets acompanhados pela operação automática, dos pedidos, das missões e dos veículos registrados durante a sessão. Elas não representam o saldo total de todos os endereços estáticos do galpão.
 
 ## Indicadores apresentados
 
 - pedidos abertos e criados;
 - missões ativas e concluídas;
-- unidades em reserva;
-- unidades em picking;
+- unidades monitoradas em reserva;
+- unidades monitoradas em picking;
 - unidades no caminhão;
 - pallets e unidades expedidos;
 - veículos trabalhando e ociosos;
 - eventos de segurança e avarias;
 - fase e número do ciclo do caminhão.
 
-O painel também mostra as filas recentes de pedidos e missões, além do histórico de eventos da sessão.
+O painel também mostra o inventário monitorado com SKU, saldo, capacidade e ponto de reposição, as filas recentes de pedidos e missões, além do histórico de eventos da sessão.
 
 ## Explicação das decisões
 
@@ -77,7 +77,7 @@ Acelera pedidos e reduz o tempo mínimo de permanência da carga antes da saída
 
 ### Corredor bloqueado
 
-Mantém uma barreira virtual ativa até a troca do cenário. Os sensores continuam responsáveis pela frenagem durante o movimento.
+Mantém uma barreira virtual ativa até a troca do cenário. Os sensores provocam frenagem e espera; ainda não existe recálculo automático da rota ao redor de um obstáculo surgido depois da saída.
 
 ### Falha de equipamento
 
@@ -103,7 +103,7 @@ Esses comandos alimentam os mesmos atores e registros usados pelos cenários aut
 
 ## Estoque quantitativo demonstrativo
 
-Cada unidade logística visual recebe de forma determinística:
+Cada unidade logística acompanhada pela operação automática recebe de forma determinística:
 
 - pallet identificado;
 - SKU;
@@ -113,6 +113,8 @@ Cada unidade logística visual recebe de forma determinística:
 - ponto de reposição;
 - zona e posição atuais;
 - pedido pendente, quando existir.
+
+Pallets que já começam em reserva ou picking são registrados como estoque inicial observado, sem fabricar um evento de recebimento. Novos pallets `LIVE-IN-*` aumentam o contador de entrada somente quando realmente surgem no recebimento da simulação.
 
 Os pedidos também recebem quantidade. A contabilização de unidades expedidas usa a demanda registrada no pedido; quando não existe pedido quantitativo, utiliza o conteúdo conhecido do pallet como referência.
 
