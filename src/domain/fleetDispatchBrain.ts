@@ -2,6 +2,7 @@ import type { WarehouseLayout } from './layout'
 import type { OperationZone } from './operationsControl'
 import { palletQuantity, productForPallet } from './operationsControl'
 import { vehicleCoversMission } from './industrialFlow'
+import { chooseMonteCarloDispatch } from './monteCarloDispatch'
 import type {
   FleetMission,
   FleetMissionRole,
@@ -34,6 +35,8 @@ interface ScoredMission {
   emptyTravel: number
   congestion: number
   rolePenalty: number
+  expectedCost?: number
+  confidence?: number
 }
 
 const ROLE_LABEL: Record<FleetMissionRole, string> = {
@@ -84,9 +87,15 @@ function decisionReason(
     selected.congestion === 0
       ? 'rota sem conflito relevante'
       : `${selected.congestion} células compartilhadas fora dos pontos críticos`
+  const monteCarloText =
+    selected.expectedCost === undefined
+      ? ''
+      : ` Planejador Monte Carlo: custo esperado ${selected.expectedCost.toFixed(
+          1,
+        )}, confiança ${Math.round((selected.confidence ?? 0) * 100)}%.`
   return `${vehicle.label}: autorizado para ${ROLE_LABEL[selected.mission.role]}, ${selected.emptyTravel.toFixed(
     1,
-  )} m até a origem, cabeceira ${lane} e ${congestionText}.`
+  )} m até a origem, cabeceira ${lane} e ${congestionText}.${monteCarloText}`
 }
 
 function sourceZone(mission: FleetMission): OperationZone {
@@ -104,6 +113,7 @@ function sourceZone(mission: FleetMission): OperationZone {
   if (
     normalized.includes('staging:') ||
     normalized.includes('aisle-buffer:') ||
+    normalized.includes('outbound-buffer:') ||
     normalized.includes('shipping-buffer:') ||
     normalized.includes('buffer') ||
     normalized.includes('pré-embarque') ||
@@ -178,7 +188,7 @@ export function chooseBrainMissionForVehicle(
     context.activeMissions.flatMap((mission) => [...criticalCells(mission)]),
   )
 
-  const selected = context.availableMissions
+  const candidates = context.availableMissions
     .filter(
       (mission) =>
         !context.reservedMissionIds.has(mission.id) &&
@@ -201,7 +211,44 @@ export function chooseBrainMissionForVehicle(
         mission.sequence * 0.001
       return { mission, score, emptyTravel, congestion, rolePenalty }
     })
-    .sort((left, right) => left.score - right.score)[0]
+
+  const seed = [
+    context.vehicle.id,
+    context.vehiclePoint.x.toFixed(2),
+    context.vehiclePoint.z.toFixed(2),
+    ...context.activeMissions.map((mission) => mission.id).sort(),
+    ...candidates.map((candidate) => candidate.mission.id).sort(),
+  ].join('|')
+  const monteCarlo = chooseMonteCarloDispatch(
+    candidates.map((candidate) => ({
+      id: candidate.mission.id,
+      deterministicCost: candidate.score,
+      priority: candidate.mission.priority,
+      emptyTravel: candidate.emptyTravel,
+      congestion: candidate.congestion,
+      routeCells: candidate.mission.trafficCells.length,
+      rolePenalty: candidate.rolePenalty,
+      sequence: candidate.mission.sequence,
+    })),
+    {
+      seed,
+      rollouts: candidates.length <= 2 ? 64 : 96,
+      horizon: 4,
+    },
+  )
+  const deterministicFallback = [...candidates].sort(
+    (left, right) => left.score - right.score,
+  )[0]
+  const monteCarloSelected = monteCarlo
+    ? candidates.find((candidate) => candidate.mission.id === monteCarlo.candidateId)
+    : undefined
+  const selected = monteCarloSelected
+    ? {
+        ...monteCarloSelected,
+        expectedCost: monteCarlo.expectedCost,
+        confidence: monteCarlo.confidence,
+      }
+    : deterministicFallback
 
   if (!selected) return undefined
 
