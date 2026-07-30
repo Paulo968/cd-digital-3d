@@ -43,6 +43,8 @@ export function PalletCollisionRegistry({
 }) {
   const pallets = useOperationsControlStore((state) => state.pallets)
   const activeHazardsRef = useRef<Set<string>>(new Set())
+  const observedPalletsRef = useRef<Set<string>>(new Set())
+  const departedPalletsRef = useRef<Set<string>>(new Set())
   const lookup = useMemo(() => {
     const result = new Map<string, RealisticMissionStop>()
     collisionStops(plan).forEach((stop) => {
@@ -56,6 +58,14 @@ export function PalletCollisionRegistry({
     const nextHazards = new Set<string>()
     const initialStopByPallet = plan.initialPalletStops
 
+    observedPalletsRef.current.forEach((palletId) => {
+      if (!pallets[palletId]) departedPalletsRef.current.add(palletId)
+    })
+    Object.keys(pallets).forEach((palletId) => {
+      observedPalletsRef.current.add(palletId)
+      departedPalletsRef.current.delete(palletId)
+    })
+
     const palletIds = new Set([
       ...Object.keys(initialStopByPallet),
       ...Object.keys(pallets),
@@ -65,7 +75,9 @@ export function PalletCollisionRegistry({
       const tracked = pallets[palletId]
       const stop = tracked
         ? lookup.get(tracked.stopId)
-        : initialStopByPallet[palletId]
+        : departedPalletsRef.current.has(palletId)
+          ? undefined
+          : initialStopByPallet[palletId]
       if (!stop || !isFloorCollisionStop(stop)) return
 
       const hazardId = `floor-pallet:${palletId}`
@@ -93,6 +105,8 @@ export function PalletCollisionRegistry({
     () => () => {
       activeHazardsRef.current.forEach(removeRuntimeHazard)
       activeHazardsRef.current.clear()
+      observedPalletsRef.current.clear()
+      departedPalletsRef.current.clear()
     },
     [],
   )
