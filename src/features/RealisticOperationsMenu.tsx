@@ -1,5 +1,9 @@
 import { useMemo, useState } from 'react'
-import { SCENARIO_PROFILES, type OperationScenario } from '../domain/operationsControl'
+import { createPortal } from 'react-dom'
+import {
+  SCENARIO_PROFILES,
+  type OperationScenario,
+} from '../domain/operationsControl'
 import { useOperationsControlStore } from '../store/operationsControlStore'
 import './realistic-operations-menu.css'
 
@@ -80,11 +84,13 @@ function FlowPanel() {
               <article key={mission.id} className={`mission-${mission.status}`}>
                 <div>
                   <strong>{mission.palletId}</strong>
-                  <span>{mission.status === 'running' ? 'Em execução' : 'Na fila'}</span>
+                  <span>
+                    {mission.status === 'running' ? 'Em execução' : 'Na fila'}
+                  </span>
                 </div>
                 <small>
-                  {ROLE_LABEL[mission.role] ?? mission.role}: {mission.sourceLabel} →{' '}
-                  {mission.destinationLabel}
+                  {ROLE_LABEL[mission.role] ?? mission.role}: {mission.sourceLabel}{' '}
+                  → {mission.destinationLabel}
                 </small>
                 {mission.vehicleId && <em>Equipamento: {mission.vehicleId}</em>}
               </article>
@@ -122,13 +128,15 @@ function FlowPanel() {
 
 function FleetPanel() {
   const vehicles = useOperationsControlStore((state) => state.vehicles)
-  const list = Object.values(vehicles).sort((left, right) => left.id.localeCompare(right.id))
+  const list = Object.values(vehicles).sort((left, right) =>
+    left.id.localeCompare(right.id),
+  )
 
   return (
     <div className="realistic-panel-body">
       <p className="realistic-explanation">
-        Cada equipamento possui função definida. As empilhadeiras EMP atendem apenas as
-        ruas indicadas no próprio código do veículo.
+        Cada equipamento possui função definida. As empilhadeiras EMP atendem
+        somente as ruas indicadas no próprio código do veículo.
       </p>
       <div className="realistic-list">
         {list.map((vehicle) => (
@@ -146,7 +154,9 @@ function FleetPanel() {
         <strong>Responsabilidades</strong>
         <span>RX-REC → descarrega o recebimento</span>
         <span>TP-IN → leva o pallet até o buffer da rua</span>
-        <span>EMP-AB / EMP-CD / EMP-EF → armazenam e retiram nas próprias ruas</span>
+        <span>
+          EMP-AB / EMP-CD / EMP-EF → armazenam e retiram nas próprias ruas
+        </span>
         <span>RX-LOAD → carrega somente o caminhão da expedição</span>
       </div>
     </div>
@@ -160,36 +170,66 @@ function InventoryPanel() {
   const palletList = Object.values(pallets)
     .sort((left, right) => right.updatedAt - left.updatedAt)
     .slice(0, 10)
-  const activeOrders = orders.filter((order) => order.status !== 'shipped').slice(0, 8)
+  const activeOrders = orders
+    .filter((order) => order.status !== 'shipped')
+    .slice(0, 8)
 
   return (
     <div className="realistic-panel-body">
       <div className="realistic-metrics">
-        <div><span>Recebidos</span><strong>{metrics.receivedPallets}</strong></div>
-        <div><span>Armazenados</span><strong>{metrics.storedPallets}</strong></div>
-        <div><span>Expedidos</span><strong>{metrics.shippedPallets}</strong></div>
-        <div><span>Pedidos abertos</span><strong>{metrics.openOrders}</strong></div>
+        <div>
+          <span>Recebidos</span>
+          <strong>{metrics.receivedPallets}</strong>
+        </div>
+        <div>
+          <span>Armazenados</span>
+          <strong>{metrics.storedPallets}</strong>
+        </div>
+        <div>
+          <span>Expedidos</span>
+          <strong>{metrics.shippedPallets}</strong>
+        </div>
+        <div>
+          <span>Pedidos abertos</span>
+          <strong>{metrics.openOrders}</strong>
+        </div>
       </div>
 
       <section className="realistic-section">
-        <header><strong>Pallets acompanhados</strong><span>{Object.keys(pallets).length}</span></header>
+        <header>
+          <strong>Pallets acompanhados</strong>
+          <span>{Object.keys(pallets).length}</span>
+        </header>
         <div className="realistic-list compact-list">
           {palletList.map((pallet) => (
             <article key={pallet.id}>
-              <div><strong>{pallet.id}</strong><span>{pallet.zone}</span></div>
-              <small>SKU {pallet.sku} · {pallet.units}/{pallet.capacity} un.</small>
+              <div>
+                <strong>{pallet.id}</strong>
+                <span>{pallet.zone}</span>
+              </div>
+              <small>
+                SKU {pallet.sku} · {pallet.units}/{pallet.capacity} un.
+              </small>
             </article>
           ))}
         </div>
       </section>
 
       <section className="realistic-section">
-        <header><strong>Pedidos automáticos</strong><span>{activeOrders.length}</span></header>
+        <header>
+          <strong>Pedidos automáticos</strong>
+          <span>{activeOrders.length}</span>
+        </header>
         <div className="realistic-list compact-list">
           {activeOrders.map((order) => (
             <article key={order.id}>
-              <div><strong>{order.id}</strong><span>{order.status}</span></div>
-              <small>{order.quantity} un. · SKU {order.sku} · {order.palletId}</small>
+              <div>
+                <strong>{order.id}</strong>
+                <span>{order.status}</span>
+              </div>
+              <small>
+                {order.quantity} un. · SKU {order.sku} · {order.palletId}
+              </small>
             </article>
           ))}
         </div>
@@ -201,7 +241,9 @@ function InventoryPanel() {
 function SafetyPanel() {
   const scenario = useOperationsControlStore((state) => state.scenario)
   const setScenario = useOperationsControlStore((state) => state.setScenario)
-  const triggerSafety = useOperationsControlStore((state) => state.triggerSafety)
+  const triggerSafety = useOperationsControlStore(
+    (state) => state.triggerSafety,
+  )
 
   return (
     <div className="realistic-panel-body">
@@ -209,21 +251,37 @@ function SafetyPanel() {
         <span>Cenário operacional</span>
         <select
           value={scenario}
-          onChange={(event) => setScenario(event.target.value as OperationScenario)}
+          onChange={(event) =>
+            setScenario(event.target.value as OperationScenario)
+          }
         >
           {Object.values(SCENARIO_PROFILES).map((profile) => (
-            <option key={profile.id} value={profile.id}>{profile.label}</option>
+            <option key={profile.id} value={profile.id}>
+              {profile.label}
+            </option>
           ))}
         </select>
         <small>{SCENARIO_PROFILES[scenario].description}</small>
       </label>
 
       <section className="realistic-section">
-        <header><strong>Testes controlados</strong><span>somente por comando</span></header>
+        <header>
+          <strong>Testes controlados</strong>
+          <span>somente por comando</span>
+        </header>
         <div className="realistic-safety-buttons">
-          <button type="button" onClick={() => triggerSafety('pedestrian')}>Travessia na faixa</button>
-          <button type="button" onClick={() => triggerSafety('obstacle')}>Bloquear corredor</button>
-          <button type="button" onClick={() => triggerSafety('failure')}>Simular avaria</button>
+          <button
+            type="button"
+            onClick={() => triggerSafety('pedestrian')}
+          >
+            Travessia na faixa
+          </button>
+          <button type="button" onClick={() => triggerSafety('obstacle')}>
+            Bloquear corredor
+          </button>
+          <button type="button" onClick={() => triggerSafety('failure')}>
+            Simular avaria
+          </button>
         </div>
       </section>
 
@@ -231,7 +289,9 @@ function SafetyPanel() {
         <strong>Regra humana</strong>
         <span>Conferente permanece na área de recebimento.</span>
         <span>Auxiliar permanece no pré-embarque.</span>
-        <span>A travessia ocorre apenas na faixa e mediante comando do cenário.</span>
+        <span>
+          A travessia ocorre apenas na faixa e mediante comando do cenário.
+        </span>
       </div>
     </div>
   )
@@ -246,15 +306,22 @@ export function RealisticOperationsMenu() {
     [metrics.activeMissions, metrics.workingVehicles],
   )
 
-  return (
-    <div className={`realistic-operations-ui ${open ? 'is-open' : 'is-closed'}`}>
+  const content = (
+    <div
+      className={`realistic-operations-ui ${open ? 'is-open' : 'is-closed'}`}
+    >
       <nav className="realistic-mode-nav" aria-label="Módulos do modo realista">
         {(Object.keys(PANEL_LABEL) as RealisticPanel[]).map((panel) => (
           <button
             key={panel}
             type="button"
             className={activePanel === panel && open ? 'active' : ''}
+            aria-pressed={activePanel === panel && open}
             onClick={() => {
+              if (activePanel === panel) {
+                setOpen((value) => !value)
+                return
+              }
               setActivePanel(panel)
               setOpen(true)
             }}
@@ -265,9 +332,17 @@ export function RealisticOperationsMenu() {
         ))}
       </nav>
 
-      <aside className="realistic-workspace" aria-label={PANEL_LABEL[activePanel]}>
-        <button type="button" className="realistic-workspace-toggle" onClick={() => setOpen((value) => !value)}>
-          <span>{open ? 'Fechar visão realista' : 'Abrir visão realista'}</span>
+      <aside
+        className="realistic-workspace"
+        aria-label={`${PANEL_LABEL[activePanel]} — painel do modo realista`}
+      >
+        <button
+          type="button"
+          className="realistic-workspace-toggle"
+          aria-expanded={open}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <span>{open ? 'Ocultar painel' : 'Abrir painel'}</span>
           <small>{open ? summary : PANEL_LABEL[activePanel]}</small>
         </button>
         {open && (
@@ -281,11 +356,14 @@ export function RealisticOperationsMenu() {
             {activePanel === 'inventory' && <InventoryPanel />}
             {activePanel === 'safety' && <SafetyPanel />}
             <p className="realistic-disclaimer">
-              Simulação demonstrativa. Não altera o estoque oficial nem substitui controle industrial certificado.
+              Simulação demonstrativa. Não altera o estoque oficial nem
+              substitui controle industrial certificado.
             </p>
           </div>
         )}
       </aside>
     </div>
   )
+
+  return createPortal(content, document.body)
 }
