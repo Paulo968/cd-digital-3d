@@ -14,6 +14,10 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 - papéis separados para transporte de piso, armazenagem, reabastecimento e expedição;
 - controle preventivo de tráfego por reserva de corredores e cruzamentos antes do despacho;
 - missões com trajetos conflitantes aguardam, enquanto rotas independentes continuam em paralelo;
+- sensores virtuais medem a distância mínima durante o movimento sem atualizar React por quadro;
+- velocidade segura calculada conforme distância disponível, velocidade atual e desaceleração de emergência;
+- reação visual a pedestre no corredor, obstáculo temporário e equipamento avariado no meio da rota;
+- luz de freio e giroflex indicam frenagem emergencial ou falha temporária;
 - três posições de recebimento no desktop e seis posições visuais de carga dentro do caminhão;
 - pallets demonstrativos diferentes, coletados e depositados individualmente em espera, reserva, picking e carroceria;
 - tarefas dependentes: o próximo veículo só recebe o pallet depois da missão anterior terminar por completo;
@@ -22,7 +26,7 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 - pose de execução em memória para que novos comandos partam do ponto atual sem provocar re-renderização por quadro;
 - aceleração, frenagem, orientação progressiva e curvas arredondadas na movimentação dos veículos;
 - geometria compartilhada entre longarinas, pallets, cargas e garfos, evitando cargas visualmente flutuantes;
-- qualidade adaptativa para reduzir sombras, resolução, veículos e detalhes em celulares e dispositivos com ponteiro grosseiro;
+- qualidade adaptativa para reduzir sombras, resolução, veículos, frequência de eventos e detalhes em celulares;
 - construtor guiado de layouts regulares;
 - proteção de estoque em alterações compatíveis de layout;
 - importação CSV validada contra o layout ativo;
@@ -41,9 +45,9 @@ O 3D representa os dados carregados. Importação de ERP/WMS é tratada como inf
 
 A sequência heurística busca reduzir a distância em relação à ordem informada, mas não garante o ótimo global. Distâncias calculadas não representam tempo, produtividade ou economia financeira comprovados.
 
-A operação automática do modo realista é exclusivamente demonstrativa: não altera estoque, não gera evento e não representa comando de equipamento físico. A fila visual distribui pallets entre veículos compatíveis, reserva previamente os trajetos e mantém cada máquina onde concluiu a entrega, sem fabricar confirmação física.
+A operação automática do modo realista é exclusivamente demonstrativa: não altera estoque, não gera evento e não representa comando de equipamento físico. A fila visual distribui pallets entre veículos compatíveis, reserva previamente os trajetos, reage a riscos virtuais e mantém cada máquina onde concluiu a entrega, sem fabricar confirmação física.
 
-O controle de tráfego atual é preventivo no despacho. Ele evita iniciar simultaneamente missões que compartilham células de circulação, mas ainda não substitui sensores, detecção dinâmica de obstáculos ou segurança de equipamentos físicos.
+Os sensores atuais usam posições e volumes simplificados dentro da simulação. Eles demonstram lógica de parada e retomada, mas não substituem scanner a laser, câmera, controlador de segurança, certificação ou redundância exigidos por equipamentos autônomos reais.
 
 ## Auditoria
 
