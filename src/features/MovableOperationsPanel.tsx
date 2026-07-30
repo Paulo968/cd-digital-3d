@@ -12,12 +12,16 @@ import {
   DESKTOP_PANEL_BOUNDS,
   clampPanelPosition,
   panelPresetPosition,
+  panelSizeIsUsable,
   type PanelPosition,
   type PanelPreset,
+  type PanelSize,
 } from './operationsPanelPosition'
 import './movable-operations-panel.css'
 
-const POSITION_STORAGE_KEY = 'cd-digital-3d-operations-panel-position'
+const POSITION_STORAGE_KEY = 'cd-digital-3d-operations-panel-position-v2'
+const LEGACY_POSITION_STORAGE_KEY = 'cd-digital-3d-operations-panel-position'
+const MAX_MEASURE_ATTEMPTS = 24
 
 const PRESETS: Array<{
   id: PanelPreset
@@ -50,6 +54,8 @@ function readSavedPosition(): PanelPosition | null {
   if (typeof window === 'undefined') return null
 
   try {
+    // A versão anterior podia salvar uma coordenada calculada antes da medição real.
+    window.localStorage.removeItem(LEGACY_POSITION_STORAGE_KEY)
     const value = window.localStorage.getItem(POSITION_STORAGE_KEY)
     if (!value) return null
     const parsed = JSON.parse(value) as Partial<PanelPosition>
@@ -68,6 +74,15 @@ function savePosition(position: PanelPosition): void {
   }
 }
 
+function clearSavedPosition(): void {
+  try {
+    window.localStorage.removeItem(POSITION_STORAGE_KEY)
+    window.localStorage.removeItem(LEGACY_POSITION_STORAGE_KEY)
+  } catch {
+    // A recuperação visual não depende do armazenamento local.
+  }
+}
+
 function currentViewport() {
   return { width: window.innerWidth, height: window.innerHeight }
 }
@@ -76,6 +91,27 @@ function currentBounds() {
   return window.innerWidth <= 700
     ? COMPACT_PANEL_BOUNDS
     : DESKTOP_PANEL_BOUNDS
+}
+
+function measuredPanelSize(panel: HTMLElement): PanelSize | null {
+  const rect = panel.getBoundingClientRect()
+  const size = { width: rect.width, height: rect.height }
+  return panelSizeIsUsable(size) ? size : null
+}
+
+function estimatedPanelSize(collapsed: boolean): PanelSize {
+  const viewport = currentViewport()
+  const bounds = currentBounds()
+  const availableWidth = Math.max(120, viewport.width - bounds.margin * 2)
+  const availableHeight = Math.max(
+    44,
+    viewport.height - bounds.topInset - bounds.bottomInset,
+  )
+
+  return {
+    width: collapsed ? Math.min(250, availableWidth) : Math.min(390, availableWidth),
+    height: collapsed ? 48 : Math.min(620, availableHeight),
+  }
 }
 
 export function MovableOperationsPanel({
@@ -91,6 +127,11 @@ export function MovableOperationsPanel({
 
   const updatePosition = useCallback(
     (next: PanelPosition, persist = false) => {
+      const previous = positionRef.current
+      if (previous?.x === next.x && previous.y === next.y) {
+        if (persist) savePosition(next)
+        return
+      }
       positionRef.current = next
       setPosition(next)
       if (persist) savePosition(next)
@@ -99,25 +140,23 @@ export function MovableOperationsPanel({
   )
 
   const clampToViewport = useCallback(
-    (candidate?: PanelPosition, persist = true) => {
+    (candidate?: PanelPosition, persist = true): boolean => {
       const panel = panelRef.current
-      if (!panel) return
-      const rect = panel.getBoundingClientRect()
+      if (!panel) return false
+      const size = measuredPanelSize(panel)
+      if (!size) return false
+
       const viewport = currentViewport()
       const bounds = currentBounds()
-      const fallback = panelPresetPosition(
-        'top-right',
-        { width: rect.width, height: rect.height },
-        viewport,
-        bounds,
-      )
+      const fallback = panelPresetPosition('top-right', size, viewport, bounds)
       const next = clampPanelPosition(
         candidate ?? positionRef.current ?? fallback,
-        { width: rect.width, height: rect.height },
+        size,
         viewport,
         bounds,
       )
       updatePosition(next, persist)
+      return true
     },
     [updatePosition],
   )
@@ -125,24 +164,68 @@ export function MovableOperationsPanel({
   const applyPreset = useCallback(
     (preset: PanelPreset) => {
       const panel = panelRef.current
-      if (!panel) return
-      const rect = panel.getBoundingClientRect()
+      const size = panel ? measuredPanelSize(panel) : null
       const next = panelPresetPosition(
         preset,
-        { width: rect.width, height: rect.height },
+        size ?? estimatedPanelSize(collapsed),
         currentViewport(),
         currentBounds(),
       )
       updatePosition(next, true)
     },
-    [updatePosition],
+    [collapsed, updatePosition],
   )
 
-  useLayoutEffect(() => {
-    const animationFrame = window.requestAnimationFrame(() => {
-      clampToViewport(undefined, true)
+  const recoverPanel = useCallback(() => {
+    clearSavedPosition()
+    const next = panelPresetPosition(
+      'top-right',
+      estimatedPanelSize(false),
+      currentViewport(),
+      currentBounds(),
+    )
+    updatePosition(next, true)
+    if (collapsed) onToggle()
+
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        clampToViewport(next, true)
+      })
     })
-    return () => window.cancelAnimationFrame(animationFrame)
+  }, [clampToViewport, collapsed, onToggle, updatePosition])
+
+  useLayoutEffect(() => {
+    const panel = panelRef.current
+    if (!panel) return
+
+    let animationFrame = 0
+    let attempts = 0
+
+    const positionWhenMeasured = () => {
+      if (clampToViewport(undefined, attempts === 0)) return
+      attempts += 1
+      if (attempts < MAX_MEASURE_ATTEMPTS) {
+        animationFrame = window.requestAnimationFrame(positionWhenMeasured)
+      }
+    }
+
+    animationFrame = window.requestAnimationFrame(positionWhenMeasured)
+
+    const observer =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            window.cancelAnimationFrame(animationFrame)
+            animationFrame = window.requestAnimationFrame(() => {
+              clampToViewport(undefined, false)
+            })
+          })
+    observer?.observe(panel)
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame)
+      observer?.disconnect()
+    }
   }, [clampToViewport, collapsed])
 
   useEffect(() => {
@@ -172,13 +255,15 @@ export function MovableOperationsPanel({
     const drag = dragRef.current
     const panel = panelRef.current
     if (!drag || !panel || drag.pointerId !== event.pointerId) return
-    const rect = panel.getBoundingClientRect()
+    const size = measuredPanelSize(panel)
+    if (!size) return
+
     const next = clampPanelPosition(
       {
         x: drag.originX + event.clientX - drag.startClientX,
         y: drag.originY + event.clientY - drag.startClientY,
       },
-      { width: rect.width, height: rect.height },
+      size,
       currentViewport(),
       currentBounds(),
     )
@@ -197,72 +282,85 @@ export function MovableOperationsPanel({
   }
 
   return (
-    <aside
-      ref={panelRef}
-      className={`operations-control movable-operations-control ${
-        collapsed ? 'is-collapsed' : ''
-      } ${dragging ? 'is-dragging' : ''}`}
-      style={
-        position
-          ? {
-              left: position.x,
-              top: position.y,
-              right: 'auto',
-              bottom: 'auto',
-            }
-          : undefined
-      }
-    >
-      <div className="movable-operations-toolbar">
-        <button
-          type="button"
-          className="movable-operations-drag-handle"
-          aria-label="Arrastar a central operacional"
-          title="Segure e arraste para mover"
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={finishDrag}
-          onPointerCancel={finishDrag}
-        >
-          <span className="movable-operations-grip" aria-hidden="true">
-            ⠿
-          </span>
-          <span>
-            <strong>Central operacional</strong>
-            <small>Segure e arraste</small>
-          </span>
-        </button>
-        <button
-          type="button"
-          className="movable-operations-collapse"
-          onClick={onToggle}
-          aria-expanded={!collapsed}
-        >
-          {collapsed ? 'Abrir' : 'Ocultar'}
-        </button>
-      </div>
+    <>
+      <button
+        type="button"
+        className="operations-panel-recover"
+        onClick={recoverPanel}
+        title="Trazer a central operacional para a tela"
+        aria-label="Localizar a central operacional"
+      >
+        <span aria-hidden="true">◎</span>
+        <strong>Localizar central</strong>
+      </button>
 
-      {!collapsed && (
-        <div className="movable-operations-presets">
-          <span>Posição rápida</span>
-          <div role="group" aria-label="Posições rápidas da central operacional">
-            {PRESETS.map((preset) => (
-              <button
-                key={preset.id}
-                type="button"
-                onClick={() => applyPreset(preset.id)}
-                aria-label={`Mover para ${preset.label}`}
-                title={`Mover para ${preset.label}`}
-              >
-                <strong aria-hidden="true">{preset.icon}</strong>
-                <small>{preset.label}</small>
-              </button>
-            ))}
-          </div>
+      <aside
+        ref={panelRef}
+        className={`operations-control movable-operations-control ${
+          collapsed ? 'is-collapsed' : ''
+        } ${dragging ? 'is-dragging' : ''}`}
+        style={
+          position
+            ? {
+                left: position.x,
+                top: position.y,
+                right: 'auto',
+                bottom: 'auto',
+              }
+            : undefined
+        }
+      >
+        <div className="movable-operations-toolbar">
+          <button
+            type="button"
+            className="movable-operations-drag-handle"
+            aria-label="Arrastar a central operacional"
+            title="Segure e arraste para mover"
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={finishDrag}
+            onPointerCancel={finishDrag}
+          >
+            <span className="movable-operations-grip" aria-hidden="true">
+              ⠿
+            </span>
+            <span>
+              <strong>Central operacional</strong>
+              <small>Segure e arraste</small>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="movable-operations-collapse"
+            onClick={onToggle}
+            aria-expanded={!collapsed}
+          >
+            {collapsed ? 'Abrir' : 'Ocultar'}
+          </button>
         </div>
-      )}
 
-      {children}
-    </aside>
+        {!collapsed && (
+          <div className="movable-operations-presets">
+            <span>Posição rápida</span>
+            <div role="group" aria-label="Posições rápidas da central operacional">
+              {PRESETS.map((preset) => (
+                <button
+                  key={preset.id}
+                  type="button"
+                  onClick={() => applyPreset(preset.id)}
+                  aria-label={`Mover para ${preset.label}`}
+                  title={`Mover para ${preset.label}`}
+                >
+                  <strong aria-hidden="true">{preset.icon}</strong>
+                  <small>{preset.label}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {children}
+      </aside>
+    </>
   )
 }
