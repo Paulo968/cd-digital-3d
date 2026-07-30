@@ -31,12 +31,18 @@ export interface TrafficFlowDecision {
   speedLimit: number
 }
 
+interface BlockObservation {
+  since: number
+  lastSeenAt: number
+}
+
 interface VehicleMemory {
-  blockedBy: string | null
-  blockedSince: number | null
+  blockers: Map<string, BlockObservation>
+  lastBlockedAt: number
   lastMovingAt: number
   lastGrantedAt: number
   lastYieldedAt: number
+  queueTicket: number | null
 }
 
 interface PassageGrant {
@@ -47,22 +53,16 @@ interface PassageGrant {
   flowKey: string
 }
 
-interface FlowReservation {
-  direction: FlowDirection
-  ownerId: string
-  expiresAt: number
-}
-
 type FlowDirection = 'north' | 'south' | 'east' | 'west'
 
-const BLOCK_CONFIRMATION_MS = 420
-const PASSAGE_HOLD_MS = 4_200
+const BLOCK_CONFIRMATION_MS = 360
+const PASSAGE_HOLD_MS = 5_200
 const PASSAGE_REFRESH_MS = 1_800
-const FLOW_HOLD_MS = 3_000
 const RELEASE_DISTANCE = 5.2
 const FLOW_CELL_SIZE = 5
-const CREEP_SPEED = 0.95
-const CONVOY_SPEED = 1.25
+const CREEP_SPEED = 1.05
+const BLOCK_OBSERVATION_TTL_MS = 1_400
+const TICKET_IDLE_RESET_MS = 2_800
 
 function pairKey(leftId: string, rightId: string): string {
   return [leftId, rightId].sort().join('|')
@@ -120,18 +120,19 @@ export class TrafficFlowCoordinator {
 
   private readonly grants = new Map<string, PassageGrant>()
 
-  private readonly flows = new Map<string, FlowReservation>()
+  private nextTicket = 1
 
   private memoryFor(vehicleId: string): VehicleMemory {
     const current = this.memories.get(vehicleId)
     if (current) return current
 
     const created: VehicleMemory = {
-      blockedBy: null,
-      blockedSince: null,
+      blockers: new Map(),
+      lastBlockedAt: 0,
       lastMovingAt: 0,
       lastGrantedAt: 0,
       lastYieldedAt: 0,
+      queueTicket: null,
     }
     this.memories.set(vehicleId, created)
     return created
@@ -143,6 +144,34 @@ export class TrafficFlowCoordinator {
     return memory
   }
 
+  private claimTicket(memory: VehicleMemory): number {
+    if (memory.queueTicket !== null) return memory.queueTicket
+    memory.queueTicket = this.nextTicket
+    this.nextTicket += 1
+    return memory.queueTicket
+  }
+
+  private claimPairTickets(
+    vehicle: TrafficVehicleSnapshot,
+    hazard: TrafficVehicleSnapshot,
+  ): void {
+    const vehicleMemory = this.memoryFor(vehicle.id)
+    const hazardMemory = this.memoryFor(hazard.id)
+
+    if (
+      vehicleMemory.queueTicket === null &&
+      hazardMemory.queueTicket === null
+    ) {
+      const [firstId, secondId] = [vehicle.id, hazard.id].sort()
+      this.claimTicket(this.memoryFor(firstId))
+      this.claimTicket(this.memoryFor(secondId))
+      return
+    }
+
+    this.claimTicket(vehicleMemory)
+    this.claimTicket(hazardMemory)
+  }
+
   private updateBlock(
     vehicleId: string,
     hazardId: string,
@@ -151,57 +180,81 @@ export class TrafficFlowCoordinator {
   ): VehicleMemory {
     const memory = this.memoryFor(vehicleId)
     if (!blocked) {
-      if (memory.blockedBy === hazardId) {
-        memory.blockedBy = null
-        memory.blockedSince = null
-      }
+      memory.blockers.delete(hazardId)
       return memory
     }
 
-    if (memory.blockedBy !== hazardId || memory.blockedSince === null) {
-      memory.blockedBy = hazardId
-      memory.blockedSince = now
-    }
+    const current = memory.blockers.get(hazardId)
+    memory.blockers.set(hazardId, {
+      since: current?.since ?? now,
+      lastSeenAt: now,
+    })
+    memory.lastBlockedAt = now
+    this.claimTicket(memory)
     return memory
   }
 
   private cleanup(now: number): void {
+    const grantVehicleIds = new Set<string>()
     for (const [key, grant] of this.grants) {
-      if (grant.expiresAt < now) this.grants.delete(key)
+      if (grant.expiresAt < now) {
+        this.grants.delete(key)
+        continue
+      }
+      grantVehicleIds.add(grant.winnerId)
+      grantVehicleIds.add(grant.loserId)
     }
-    for (const [key, flow] of this.flows) {
-      if (flow.expiresAt < now) this.flows.delete(key)
-    }
-  }
 
-  private waitingScore(
-    memory: VehicleMemory,
-    snapshot: TrafficVehicleSnapshot,
-    now: number,
-  ): number {
-    const waited = memory.blockedSince === null ? 0 : now - memory.blockedSince
-    const recentlyMoving = now - memory.lastMovingAt <= 1_100 ? 190 : 0
-    const alreadyRolling = snapshot.speed > 0.22 ? 160 : 0
-    const fairness = now - memory.lastYieldedAt <= 10_000 ? 125 : 0
-    const starvationRelief = Math.min(320, waited / 8)
-    return recentlyMoving + alreadyRolling + fairness + starvationRelief
+    for (const [vehicleId, memory] of this.memories) {
+      for (const [hazardId, observation] of memory.blockers) {
+        if (now - observation.lastSeenAt > BLOCK_OBSERVATION_TTL_MS) {
+          memory.blockers.delete(hazardId)
+        }
+      }
+
+      if (
+        memory.queueTicket !== null &&
+        !grantVehicleIds.has(vehicleId) &&
+        memory.blockers.size === 0 &&
+        now - memory.lastBlockedAt > TICKET_IDLE_RESET_MS
+      ) {
+        memory.queueTicket = null
+      }
+    }
   }
 
   private chooseWinner(
     vehicle: TrafficVehicleSnapshot,
     hazard: TrafficVehicleSnapshot,
-    now: number,
   ): string {
-    const vehicleMemory = this.memoryFor(vehicle.id)
-    const hazardMemory = this.memoryFor(hazard.id)
-    const vehicleScore = this.waitingScore(vehicleMemory, vehicle, now)
-    const hazardScore = this.waitingScore(hazardMemory, hazard, now)
+    this.claimPairTickets(vehicle, hazard)
+    const vehicleTicket = this.memoryFor(vehicle.id).queueTicket!
+    const hazardTicket = this.memoryFor(hazard.id).queueTicket!
 
-    if (Math.abs(vehicleScore - hazardScore) > 0.001) {
-      return vehicleScore > hazardScore ? vehicle.id : hazard.id
+    if (vehicleTicket !== hazardTicket) {
+      return vehicleTicket < hazardTicket ? vehicle.id : hazard.id
     }
-
     return vehicle.id.localeCompare(hazard.id) < 0 ? vehicle.id : hazard.id
+  }
+
+  private createGrant(
+    vehicle: TrafficVehicleSnapshot,
+    hazard: TrafficVehicleSnapshot,
+    now: number,
+    flowKey: string,
+  ): PassageGrant {
+    const winnerId = this.chooseWinner(vehicle, hazard)
+    const loserId = winnerId === vehicle.id ? hazard.id : vehicle.id
+    const grant: PassageGrant = {
+      winnerId,
+      loserId,
+      createdAt: now,
+      expiresAt: now + PASSAGE_HOLD_MS,
+      flowKey,
+    }
+    this.memoryFor(winnerId).lastGrantedAt = now
+    this.memoryFor(loserId).lastYieldedAt = now
+    return grant
   }
 
   decide(input: TrafficFlowDecisionInput): TrafficFlowDecision {
@@ -216,8 +269,8 @@ export class TrafficFlowCoordinator {
     const vehicleDirection = directionForSnapshot(vehicle)
     const hazardDirection = directionForSnapshot(hazard)
 
-    // Mesmo sentido continua usando distância de seguimento normal. O veículo
-    // de trás nunca recebe autorização para atravessar o da frente.
+    // Veículos no mesmo sentido continuam usando a distância de seguimento.
+    // A arbitragem nunca autoriza o veículo de trás a atravessar o da frente.
     if (sameDirection(vehicleDirection, hazardDirection)) return emptyDecision()
 
     const key = pairKey(vehicle.id, hazard.id)
@@ -228,8 +281,20 @@ export class TrafficFlowCoordinator {
       if (separation > RELEASE_DISTANCE) {
         this.grants.delete(key)
       } else {
+        const globallyPreferred = this.chooseWinner(vehicle, hazard)
+        if (globallyPreferred !== existingGrant.winnerId) {
+          const replacement = this.createGrant(vehicle, hazard, now, flowKey)
+          this.grants.set(key, replacement)
+          return {
+            action: replacement.winnerId === vehicle.id ? 'proceed' : 'yield',
+            winnerId: replacement.winnerId,
+            flowKey: replacement.flowKey,
+            speedLimit: replacement.winnerId === vehicle.id ? CREEP_SPEED : 0,
+          }
+        }
+
         const winner = existingGrant.winnerId === vehicle.id ? vehicle : hazard
-        if (winner.speed > 0.16) {
+        if (winner.speed > 0.12) {
           existingGrant.expiresAt = Math.max(
             existingGrant.expiresAt,
             now + PASSAGE_REFRESH_MS,
@@ -245,41 +310,14 @@ export class TrafficFlowCoordinator {
       }
     }
 
-    const reservedFlow = this.flows.get(flowKey)
-    if (reservedFlow && vehicleDirection !== null) {
-      if (reservedFlow.direction === vehicleDirection) {
-        reservedFlow.expiresAt = Math.max(
-          reservedFlow.expiresAt,
-          now + FLOW_HOLD_MS,
-        )
-        return {
-          action: 'proceed',
-          winnerId: reservedFlow.ownerId,
-          flowKey,
-          speedLimit: CONVOY_SPEED,
-        }
-      }
-      if (
-        hazardDirection !== null &&
-        reservedFlow.direction === hazardDirection
-      ) {
-        return {
-          action: 'yield',
-          winnerId: reservedFlow.ownerId,
-          flowKey,
-          speedLimit: 0,
-        }
-      }
-    }
-
-    const vehicleWait =
-      vehicleMemory.blockedSince === null ? 0 : now - vehicleMemory.blockedSince
-    const hazardWait =
-      hazardMemory.blockedSince === null ? 0 : now - hazardMemory.blockedSince
-    const bothSlow = vehicle.speed <= 0.6 && hazard.speed <= 0.6
-    const reciprocalBlock =
-      hazardMemory.blockedBy === vehicle.id &&
-      hazardMemory.blockedSince !== null
+    const vehicleObservation = vehicleMemory.blockers.get(hazard.id)
+    const hazardObservation = hazardMemory.blockers.get(vehicle.id)
+    const vehicleWait = vehicleObservation
+      ? now - vehicleObservation.since
+      : 0
+    const hazardWait = hazardObservation ? now - hazardObservation.since : 0
+    const bothSlow = vehicle.speed <= 0.7 && hazard.speed <= 0.7
+    const reciprocalBlock = Boolean(hazardObservation)
     const confirmed =
       input.immediateConflict ||
       (bothSlow &&
@@ -288,54 +326,32 @@ export class TrafficFlowCoordinator {
 
     if (!confirmed) return emptyDecision()
 
-    const winnerId = this.chooseWinner(vehicle, hazard, now)
-    const loserId = winnerId === vehicle.id ? hazard.id : vehicle.id
-    const winnerDirection =
-      winnerId === vehicle.id ? vehicleDirection : hazardDirection
-    const grant: PassageGrant = {
-      winnerId,
-      loserId,
-      createdAt: now,
-      expiresAt: now + PASSAGE_HOLD_MS,
-      flowKey,
-    }
+    const grant = this.createGrant(vehicle, hazard, now, flowKey)
     this.grants.set(key, grant)
-    if (winnerDirection !== null) {
-      this.flows.set(flowKey, {
-        direction: winnerDirection,
-        ownerId: winnerId,
-        expiresAt: now + FLOW_HOLD_MS,
-      })
-    }
-
-    const winnerMemory = this.memoryFor(winnerId)
-    const loserMemory = this.memoryFor(loserId)
-    winnerMemory.lastGrantedAt = now
-    loserMemory.lastYieldedAt = now
 
     return {
-      action: winnerId === vehicle.id ? 'proceed' : 'yield',
-      winnerId,
+      action: grant.winnerId === vehicle.id ? 'proceed' : 'yield',
+      winnerId: grant.winnerId,
       flowKey,
-      speedLimit: winnerId === vehicle.id ? CREEP_SPEED : 0,
+      speedLimit: grant.winnerId === vehicle.id ? CREEP_SPEED : 0,
     }
   }
 
   clearVehicle(vehicleId: string): void {
     this.memories.delete(vehicleId)
+    for (const memory of this.memories.values()) {
+      memory.blockers.delete(vehicleId)
+    }
     for (const [key, grant] of this.grants) {
       if (grant.winnerId === vehicleId || grant.loserId === vehicleId) {
         this.grants.delete(key)
       }
-    }
-    for (const [key, flow] of this.flows) {
-      if (flow.ownerId === vehicleId) this.flows.delete(key)
     }
   }
 
   reset(): void {
     this.memories.clear()
     this.grants.clear()
-    this.flows.clear()
+    this.nextTicket = 1
   }
 }
