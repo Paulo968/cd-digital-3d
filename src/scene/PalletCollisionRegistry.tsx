@@ -24,6 +24,7 @@ function collisionStops(plan: RealisticFleetPlan): RealisticMissionStop[] {
         ...plan.inboundTruckStops,
         ...plan.dischargeStops,
         ...plan.aisleBufferStops,
+        ...plan.outboundAisleBufferStops,
         ...plan.shippingBufferStops,
       ]
     : []
