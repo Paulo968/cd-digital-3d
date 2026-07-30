@@ -64,21 +64,26 @@ function measuredVelocity(
   }
 }
 
+function syncVehicleHazard(state: RuntimeVehicleState): void {
+  hazards.set(state.id, {
+    id: state.id,
+    kind: 'vehicle',
+    point: state.point,
+    radius: state.radius,
+    // Veículos em missão e avariados bloqueiam. Ociosos aguardam fora da
+    // malha dinâmica até existir um gerenciador de estacionamento dedicado.
+    active: state.active || faultedVehicles.has(state.id),
+    velocity: state.velocity,
+  })
+}
+
 export function upsertRuntimeVehicle(state: RuntimeVehicleState): void {
   const now = Date.now()
   const previous = vehicles.get(state.id)
   const velocity = measuredVelocity(previous, state, now)
   const next = { ...state, velocity, updatedAt: now }
   vehicles.set(state.id, next)
-  hazards.set(state.id, {
-    id: state.id,
-    kind: 'vehicle',
-    point: state.point,
-    radius: state.radius,
-    // Uma máquina parada continua ocupando volume físico no corredor.
-    active: true,
-    velocity,
-  })
+  syncVehicleHazard(next)
   publishTelemetry(next)
 }
 
@@ -111,6 +116,8 @@ export function readRuntimeHazards(): Iterable<DynamicHazard> {
 export function setRuntimeVehicleFault(vehicleId: string, faulted: boolean): void {
   if (faulted) faultedVehicles.add(vehicleId)
   else faultedVehicles.delete(vehicleId)
+  const vehicle = vehicles.get(vehicleId)
+  if (vehicle) syncVehicleHazard(vehicle)
   setOperationVehicleFault(vehicleId, faulted)
 }
 
