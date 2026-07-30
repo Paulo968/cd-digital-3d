@@ -1,4 +1,7 @@
-import type { DynamicHazard } from '../domain/dynamicSafety'
+import type {
+  DynamicHazard,
+  PlanarVelocity,
+} from '../domain/dynamicSafety'
 import type { WorldPoint } from '../domain/routePlanning'
 import {
   publishOperationVehicleRuntime,
@@ -11,6 +14,8 @@ export interface RuntimeVehicleState {
   radius: number
   speed: number
   active: boolean
+  velocity?: PlanarVelocity
+  updatedAt?: number
 }
 
 const hazards = new Map<string, DynamicHazard>()
@@ -32,16 +37,49 @@ function publishTelemetry(state: RuntimeVehicleState): void {
   publishOperationVehicleRuntime(state.id, state.speed, state.active, now)
 }
 
+function measuredVelocity(
+  previous: RuntimeVehicleState | undefined,
+  next: RuntimeVehicleState,
+  now: number,
+): PlanarVelocity {
+  if (!next.active || !previous || previous.updatedAt === undefined) {
+    return { x: 0, z: 0 }
+  }
+
+  const seconds = Math.max(0.008, (now - previous.updatedAt) / 1000)
+  let x = (next.point.x - previous.point.x) / seconds
+  let z = (next.point.z - previous.point.z) / seconds
+  const magnitude = Math.hypot(x, z)
+  const limit = Math.max(1.2, next.speed * 1.65, 7)
+  if (magnitude > limit) {
+    const scale = limit / magnitude
+    x *= scale
+    z *= scale
+  }
+
+  const previousVelocity = previous.velocity ?? { x: 0, z: 0 }
+  return {
+    x: previousVelocity.x * 0.58 + x * 0.42,
+    z: previousVelocity.z * 0.58 + z * 0.42,
+  }
+}
+
 export function upsertRuntimeVehicle(state: RuntimeVehicleState): void {
-  vehicles.set(state.id, state)
+  const now = Date.now()
+  const previous = vehicles.get(state.id)
+  const velocity = measuredVelocity(previous, state, now)
+  const next = { ...state, velocity, updatedAt: now }
+  vehicles.set(state.id, next)
   hazards.set(state.id, {
     id: state.id,
     kind: 'vehicle',
     point: state.point,
     radius: state.radius,
-    active: state.active,
+    // Uma máquina parada continua ocupando volume físico no corredor.
+    active: true,
+    velocity,
   })
-  publishTelemetry(state)
+  publishTelemetry(next)
 }
 
 export function removeRuntimeVehicle(vehicleId: string): void {
