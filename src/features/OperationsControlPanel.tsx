@@ -49,6 +49,7 @@ export function OperationsControlPanel() {
   const scenario = useOperationsControlStore((state) => state.scenario)
   const collapsed = useOperationsControlStore((state) => state.collapsed)
   const metrics = useOperationsControlStore((state) => state.metrics)
+  const pallets = useOperationsControlStore((state) => state.pallets)
   const orders = useOperationsControlStore((state) => state.orders)
   const missions = useOperationsControlStore((state) => state.missions)
   const vehicles = useOperationsControlStore((state) => state.vehicles)
@@ -65,6 +66,9 @@ export function OperationsControlPanel() {
   const vehicleList = Object.values(vehicles).sort((left, right) =>
     left.id.localeCompare(right.id),
   )
+  const palletList = Object.values(pallets)
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, 5)
   const activeOrders = orders
     .filter((order) => order.status !== 'shipped')
     .slice(0, 5)
@@ -125,12 +129,12 @@ export function OperationsControlPanel() {
               detail={`${metrics.missionsCompleted.toLocaleString('pt-BR')} concluídas`}
             />
             <Metric
-              label="Estoque reserva"
+              label="Reserva monitorada"
               value={`${metrics.reserveUnits.toLocaleString('pt-BR')} un.`}
               detail={`${metrics.storedPallets.toLocaleString('pt-BR')} armazenagens`}
             />
             <Metric
-              label="Estoque picking"
+              label="Picking monitorado"
               value={`${metrics.pickingUnits.toLocaleString('pt-BR')} un.`}
             />
             <Metric
@@ -193,6 +197,31 @@ export function OperationsControlPanel() {
                         (vehicle.currentMissionId
                           ? `Executando ${vehicle.currentMissionId}`
                           : vehicle.label)}
+                    </small>
+                  </article>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="operations-control-section">
+            <div className="operations-section-heading">
+              <strong>Inventário monitorado</strong>
+              <span>{Object.keys(pallets).length} pallets</span>
+            </div>
+            <div className="operations-queue">
+              {palletList.length === 0 ? (
+                <p className="operations-empty">Aguardando a primeira unidade logística.</p>
+              ) : (
+                palletList.map((pallet) => (
+                  <article key={pallet.id}>
+                    <div>
+                      <strong>{pallet.id}</strong>
+                      <span>{pallet.zone}</span>
+                    </div>
+                    <small>
+                      SKU {pallet.sku} · {pallet.units}/{pallet.capacity} un. · ponto de
+                      reposição {pallet.reorderPoint}
                     </small>
                   </article>
                 ))
@@ -274,8 +303,8 @@ export function OperationsControlPanel() {
           </section>
 
           <p className="operations-disclaimer">
-            Dados gerados pela simulação. Não altera o estoque oficial nem confirma
-            movimentação física.
+            Quantidades limitadas aos pallets acompanhados pela operação automática.
+            Não altera o estoque oficial nem confirma movimentação física.
           </p>
         </div>
       )}
