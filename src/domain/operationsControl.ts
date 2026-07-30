@@ -216,7 +216,7 @@ export const SCENARIO_PROFILES: Record<OperationScenario, ScenarioProfile> = {
   'blocked-aisle': {
     id: 'blocked-aisle',
     label: 'Corredor bloqueado',
-    description: 'Uma barreira permanece ativa e força esperas e rotas alternativas.',
+    description: 'Uma barreira permanece ativa e força frenagem e espera no corredor.',
     inboundIntervalMultiplier: 1,
     orderIntervalMultiplier: 0.85,
     maxOpenOrdersMultiplier: 1.2,
