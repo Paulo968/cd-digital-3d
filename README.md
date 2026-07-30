@@ -40,7 +40,7 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 - apenas pontos críticos da rota são bloqueados no despacho, permitindo paralelismo com segurança;
 - sensores virtuais medem a distância mínima durante o movimento sem atualizar React por quadro;
 - física preditiva por volumes circulares calcula primeiro contato, velocidade relativa, tempo para colisão e distância disponível;
-- veículos parados continuam ocupando volume físico e são percebidos como obstáculos pelos demais;
+- veículos em missão e equipamentos avariados permanecem como obstáculos dinâmicos para os demais;
 - telemetria da frota é publicada em intervalos limitados, com prioridade para transições importantes;
 - velocidade segura calculada conforme distância disponível, velocidade atual e desaceleração de emergência;
 - reação visual a pessoa na faixa, obstáculo controlado e equipamento avariado no meio da rota;
@@ -94,6 +94,8 @@ O Monte Carlo melhora a comparação entre alternativas, mas não garante o óti
 
 A física atual é preditiva e cinemática: usa volumes simplificados, velocidade relativa, distância de parada e tempo para contato. Ela não é um motor industrial de corpos rígidos, não simula estabilidade de carga, tombamento, deformação, atrito de pneus ou dinâmica hidráulica.
 
+Equipamentos ociosos ainda não fazem parte da malha dinâmica de colisão, porque o protótipo não possui um gerenciador de estacionamento que garanta sua retirada das áreas de transferência. Veículos em missão, avariados, pallets e obstáculos permanecem protegidos pelos sensores.
+
 Os sensores demonstram ocupação, parada e retomada, mas não substituem scanner a laser, câmera, controlador de segurança, malha de colisão certificada ou redundância exigida por equipamentos autônomos reais.
 
 ## Auditoria e arquitetura
@@ -123,7 +125,7 @@ npm run test
 npm run build
 ```
 
-Pull requests e branches `feat/**` ou `fix/**` executam automaticamente instalação, lint, testes e build. A branch `main` continua responsável pela publicação no GitHub Pages.
+Pull requests, branches `feat/**`/`fix/**` e atualizações diretas na `main` executam automaticamente instalação, lint, testes e build. A `main` também continua responsável pela publicação no GitHub Pages.
 
 ## Licenciamento
 
