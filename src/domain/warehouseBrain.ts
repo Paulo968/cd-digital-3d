@@ -18,6 +18,14 @@ import {
   getPalletCenterY,
 } from './warehouseGeometry'
 import type { WarehouseLocation } from './warehouse'
+import {
+  currentScenarioProfile,
+  recordOperationMission,
+  recordOperationOrder,
+  recordPalletReceived,
+  recordTruckDeparture,
+  useOperationsControlStore,
+} from '../store/operationsControlStore'
 
 const LIVE_PALLET_COLORS = [
   '#38bdf8',
@@ -53,6 +61,7 @@ export type WarehouseBrainAction =
       type: 'create-order'
       orderId: string
       palletId: string
+      quantity?: number
     }
   | {
       type: 'create-mission'
@@ -274,6 +283,16 @@ function createMission(
     trafficCells: missionTrafficCells(layout, input.source, input.destination),
   }
 
+  recordOperationMission({
+    id: mission.id,
+    palletId: mission.palletId,
+    role: mission.role,
+    sourceId: mission.source.id,
+    sourceLabel: mission.source.label,
+    destinationId: mission.destination.id,
+    destinationLabel: mission.destination.label,
+  })
+
   return {
     state: {
       ...state,
@@ -281,6 +300,10 @@ function createMission(
     },
     mission,
   }
+}
+
+function pickingUnits(): number {
+  return useOperationsControlStore.getState().metrics.pickingUnits
 }
 
 function nextOperationalMission(
@@ -292,6 +315,7 @@ function nextOperationalMission(
   const occupied = occupiedStopIds(context.palletStops)
   const reserved = reservedDestinationIds(context.missions, context.statuses)
   const pendingOutbound = new Set(state.pendingOutboundPalletIds)
+  const profile = currentScenarioProfile()
   const candidates: Array<{
     palletId: string
     color: string
@@ -361,8 +385,13 @@ function nextOperationalMission(
     const pickingOccupancy = addressStops.picking.filter((stop) =>
       occupied.has(stop.id),
     ).length
-    const pickingTarget = context.compact ? 1 : 2
-    if (pickingOccupancy >= pickingTarget) return
+    const basePickingTarget = context.compact ? 1 : 2
+    const pickingTarget = Math.min(
+      addressStops.picking.length,
+      Math.max(1, Math.ceil(basePickingTarget * profile.pickingTargetMultiplier)),
+    )
+    const targetUnits = pickingTarget * 72
+    if (pickingOccupancy >= pickingTarget && pickingUnits() >= targetUnits) return
 
     const destination = freeStop(addressStops.picking, occupied, reserved)
     if (destination) {
@@ -373,7 +402,7 @@ function nextOperationalMission(
         source,
         destination,
         eligibleKinds: ['forklift'],
-        priority: 3,
+        priority: profile.id === 'picking-shortage' ? 0 : 3,
       })
     }
   })
@@ -428,6 +457,7 @@ export function decideWarehouseBrain(
   context: WarehouseBrainContext,
 ): WarehouseBrainDecision {
   const state = { ...currentState }
+  const profile = currentScenarioProfile()
   const addressStops = brainAddressStops(context)
   const loadedPalletIds = loadedTruckPalletIds(context)
 
@@ -437,7 +467,8 @@ export function decideWarehouseBrain(
     state.truckLoadedAt = null
   }
 
-  const departureDelay = context.compact ? 14_000 : 10_000
+  const departureDelay =
+    (context.compact ? 14_000 : 10_000) * profile.departureDelayMultiplier
   const minimumDepartureLoad = context.compact ? 2 : 3
   const truckIsFull = loadedPalletIds.length >= context.plan.truckStops.length
   const truckWaitExpired =
@@ -448,6 +479,7 @@ export function decideWarehouseBrain(
 
   if ((truckIsFull || truckWaitExpired) && !loadingIsOpen) {
     const departed = new Set(loadedPalletIds)
+    recordTruckDeparture(loadedPalletIds, context.now)
     return {
       state: {
         ...state,
@@ -473,8 +505,12 @@ export function decideWarehouseBrain(
     }
   }
 
-  const maximumOpenOrders = context.compact ? 2 : 4
-  const orderInterval = context.compact ? 7_000 : 4_800
+  const maximumOpenOrders = Math.max(
+    1,
+    Math.round((context.compact ? 2 : 4) * profile.maxOpenOrdersMultiplier),
+  )
+  const orderInterval =
+    (context.compact ? 7_000 : 4_800) * profile.orderIntervalMultiplier
   const candidates = outboundCandidates(state, context, addressStops)
   if (
     state.pendingOutboundPalletIds.length < maximumOpenOrders &&
@@ -484,6 +520,7 @@ export function decideWarehouseBrain(
     const selectedIndex = state.outboundCursor % candidates.length
     const palletId = candidates[selectedIndex]
     const orderId = `AUTO-ORDER-${String(state.nextOrderNumber).padStart(4, '0')}`
+    const quantity = recordOperationOrder(orderId, palletId, context.now)
     return {
       state: {
         ...state,
@@ -495,11 +532,12 @@ export function decideWarehouseBrain(
           palletId,
         ],
       },
-      action: { type: 'create-order', orderId, palletId },
+      action: { type: 'create-order', orderId, palletId, quantity },
     }
   }
 
-  const inboundInterval = context.compact ? 8_500 : 5_800
+  const inboundInterval =
+    (context.compact ? 8_500 : 5_800) * profile.inboundIntervalMultiplier
   const occupied = occupiedStopIds(context.palletStops)
   const reserved = reservedDestinationIds(context.missions, context.statuses)
   const receiving = freeStop(context.plan.receivingStops, occupied, reserved)
@@ -515,6 +553,7 @@ export function decideWarehouseBrain(
     const palletNumber = state.nextPalletNumber
     const palletId = `LIVE-IN-${String(palletNumber).padStart(4, '0')}`
     const color = LIVE_PALLET_COLORS[(palletNumber - 1) % LIVE_PALLET_COLORS.length]
+    recordPalletReceived(palletId, receiving.id, receiving.label, context.now)
     return {
       state: {
         ...state,
