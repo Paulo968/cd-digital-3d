@@ -12,6 +12,7 @@ import {
   syncUnavailableVehicles,
   useOperationsControlStore,
 } from '../store/operationsControlStore'
+import { MovableOperationsPanel } from './MovableOperationsPanel'
 import './operations-control.css'
 
 const VEHICLE_STATUS_LABEL: Record<OperationVehicleStatus, string> = {
@@ -104,17 +105,7 @@ export function OperationsControlPanel() {
     .slice(0, 6)
 
   return (
-    <aside className={`operations-control ${collapsed ? 'is-collapsed' : ''}`}>
-      <button
-        type="button"
-        className="operations-control-toggle"
-        onClick={toggleCollapsed}
-        aria-expanded={!collapsed}
-      >
-        <span>Central operacional</span>
-        <strong>{collapsed ? 'Abrir' : 'Ocultar'}</strong>
-      </button>
-
+    <MovableOperationsPanel collapsed={collapsed} onToggle={toggleCollapsed}>
       {!collapsed && (
         <div className="operations-control-body">
           <header className="operations-control-heading">
@@ -335,6 +326,6 @@ export function OperationsControlPanel() {
           </p>
         </div>
       )}
-    </aside>
+    </MovableOperationsPanel>
   )
 }
