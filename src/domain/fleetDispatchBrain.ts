@@ -1,6 +1,7 @@
 import type { WarehouseLayout } from './layout'
 import type { OperationZone } from './operationsControl'
 import { palletQuantity, productForPallet } from './operationsControl'
+import { vehicleCoversMission } from './industrialFlow'
 import type {
   FleetMission,
   FleetMissionRole,
@@ -36,10 +37,10 @@ interface ScoredMission {
 }
 
 const ROLE_LABEL: Record<FleetMissionRole, string> = {
-  'inbound-transfer': 'transferência de entrada',
-  putaway: 'armazenagem',
-  replenishment: 'reabastecimento',
-  shipping: 'expedição',
+  'inbound-transfer': 'recebimento e distribuição interna',
+  putaway: 'armazenagem da rua',
+  replenishment: 'movimentação interna e pré-embarque',
+  shipping: 'carregamento do caminhão',
 }
 
 function distance(left: WorldPoint, right: WorldPoint): number {
@@ -48,7 +49,14 @@ function distance(left: WorldPoint, right: WorldPoint): number {
 
 export function vehicleLanePreference(vehicleId: string): FleetLanePreference {
   const numericSuffix = Number(vehicleId.match(/(\d+)$/)?.[1] ?? 1)
-  return numericSuffix % 2 === 0 ? 'right' : 'left'
+  if (Number.isFinite(numericSuffix) && vehicleId.match(/\d+$/)) {
+    return numericSuffix % 2 === 0 ? 'right' : 'left'
+  }
+  const hash = [...vehicleId].reduce(
+    (total, character) => total + character.charCodeAt(0),
+    0,
+  )
+  return hash % 2 === 0 ? 'right' : 'left'
 }
 
 function criticalCells(mission: FleetMission): Set<string> {
@@ -76,19 +84,31 @@ function decisionReason(
     selected.congestion === 0
       ? 'rota sem conflito relevante'
       : `${selected.congestion} células compartilhadas fora dos pontos críticos`
-  return `${vehicle.label}: compatível com ${ROLE_LABEL[selected.mission.role]}, ${selected.emptyTravel.toFixed(
+  return `${vehicle.label}: autorizado para ${ROLE_LABEL[selected.mission.role]}, ${selected.emptyTravel.toFixed(
     1,
-  )} m até a origem, preferência pela cabeceira ${lane} e ${congestionText}.`
+  )} m até a origem, cabeceira ${lane} e ${congestionText}.`
 }
 
 function sourceZone(mission: FleetMission): OperationZone {
   const normalized = `${mission.source.id} ${mission.source.label}`.toLocaleLowerCase(
     'pt-BR',
   )
-  if (normalized.includes('receiving:') || normalized.includes('recebimento')) {
+  if (
+    normalized.includes('receiving:') ||
+    normalized.includes('inbound-truck:') ||
+    normalized.includes('recebimento') ||
+    normalized.includes('descarga')
+  ) {
     return 'receiving'
   }
-  if (normalized.includes('staging:') || normalized.includes('espera')) {
+  if (
+    normalized.includes('staging:') ||
+    normalized.includes('aisle-buffer:') ||
+    normalized.includes('shipping-buffer:') ||
+    normalized.includes('buffer') ||
+    normalized.includes('pré-embarque') ||
+    normalized.includes('espera')
+  ) {
     return 'staging'
   }
   if (normalized.includes('truck:') || normalized.includes('caminhão')) {
@@ -165,6 +185,7 @@ export function chooseBrainMissionForVehicle(
         !context.reservedDestinationIds.has(mission.destination.id) &&
         mission.eligibleKinds.includes(context.vehicle.kind) &&
         context.vehicle.roles.includes(mission.role) &&
+        vehicleCoversMission(context.vehicle.id, mission) &&
         (mission.role !== 'shipping' || truckDocked) &&
         !trafficCellsConflict(criticalCells(mission), activeCritical),
     )
