@@ -121,9 +121,7 @@ function truckStop(
   const column = index % 2
   const row = Math.floor(index / 2)
   const xOffset = column === 0 ? -0.65 : 0.65
-  const z = inbound
-    ? frontZ + 2.15 + row * 1.12
-    : frontZ + 2.15 + row * 1.12
+  const z = frontZ + 2.15 + row * 1.12
   return floorStop(
     `${prefix}:${index + 1}`,
     inbound
@@ -365,9 +363,7 @@ export function buildIndustrialFlowPlan(
     (group, index) => ({
       vehicleId: `EMP-${group.join('')}`,
       aisles: group,
-      bufferStop:
-        aisleBufferStops.find((stop) => stop.id === `aisle-buffer:${group[0]}`) ??
-        aisleBufferStops[0],
+      bufferStop: aisleBufferStops[index * 2] ?? aisleBufferStops[0],
     }),
   )
 
