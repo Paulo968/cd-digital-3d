@@ -37,6 +37,7 @@ export interface IndustrialFlowPlan extends RealisticFleetPlan {
   inboundTruckStops: RealisticMissionStop[]
   dischargeStops: RealisticMissionStop[]
   aisleBufferStops: RealisticMissionStop[]
+  outboundAisleBufferStops: RealisticMissionStop[]
   shippingBufferStops: RealisticMissionStop[]
   aisleAssignments: IndustrialAisleAssignment[]
 }
@@ -213,10 +214,11 @@ function freeLocations(
         location.status !== 'blocked' &&
         (location.status === 'empty' || location.quantity === 0),
     )
-    .sort((left, right) =>
-      left.aisle.localeCompare(right.aisle) ||
-      left.level - right.level ||
-      left.position - right.position,
+    .sort(
+      (left, right) =>
+        left.aisle.localeCompare(right.aisle) ||
+        left.level - right.level ||
+        left.position - right.position,
     )
 }
 
@@ -231,10 +233,11 @@ function occupiedLocations(
         location.status !== 'blocked' &&
         location.quantity > 0,
     )
-    .sort((left, right) =>
-      left.aisle.localeCompare(right.aisle) ||
-      left.level - right.level ||
-      left.position - right.position,
+    .sort(
+      (left, right) =>
+        left.aisle.localeCompare(right.aisle) ||
+        left.level - right.level ||
+        left.position - right.position,
     )
 }
 
@@ -245,7 +248,9 @@ function balancedReserveLocations(
   const firstPerAisle = aisles
     .map((aisle) => locations.find((location) => location.aisle === aisle))
     .filter((location): location is WarehouseLocation => Boolean(location))
-  const selectedAddresses = new Set(firstPerAisle.map((location) => location.address))
+  const selectedAddresses = new Set(
+    firstPerAisle.map((location) => location.address),
+  )
   return [
     ...firstPerAisle,
     ...locations.filter((location) => !selectedAddresses.has(location.address)),
@@ -261,7 +266,7 @@ function aisleBuffer(
   if (!row) {
     return floorStop(
       `aisle-buffer:${aisle}`,
-      `Buffer da Rua ${aisle}`,
+      `Buffer de recebimento da Rua ${aisle}`,
       0,
       frontZ - 9,
       0,
@@ -287,10 +292,25 @@ function aisleBuffer(
 
   return floorStop(
     `aisle-buffer:${aisle}`,
-    `Buffer da Rua ${aisle}`,
+    `Buffer de recebimento da Rua ${aisle}`,
     chosen.x,
     chosen.z,
     row.rotationY,
+  )
+}
+
+function outboundBuffer(
+  inbound: RealisticMissionStop,
+  aisle: string,
+): RealisticMissionStop {
+  const lateralX = Math.cos(inbound.facing) * 1.75
+  const lateralZ = Math.sin(inbound.facing) * 1.75
+  return floorStop(
+    `outbound-buffer:${aisle}`,
+    `Buffer de retirada da Rua ${aisle}`,
+    inbound.restingPoint.x + lateralX,
+    inbound.restingPoint.z + lateralZ,
+    inbound.facing,
   )
 }
 
@@ -300,11 +320,11 @@ export function industrialPlanIsActive(
   return (plan as Partial<IndustrialFlowPlan>).flowKind === 'industrial'
 }
 
-export function missionAisle(mission: FleetMission): string | null {
-  const address = mission.source.address ?? mission.destination.address
+export function missionAisle(missionInput: FleetMission): string | null {
+  const address = missionInput.source.address ?? missionInput.destination.address
   if (address) return address.split('-')[0] ?? null
-  const match = `${mission.source.id} ${mission.destination.id}`.match(
-    /aisle-buffer:([A-Za-z0-9]+)/,
+  const match = `${missionInput.source.id} ${missionInput.destination.id}`.match(
+    /(?:aisle|outbound)-buffer:([A-Za-z0-9]+)/,
   )
   return match?.[1] ?? null
 }
@@ -346,10 +366,14 @@ export function buildIndustrialFlowPlan(
   const aisleBufferStops = aisles.map((aisle) =>
     aisleBuffer(layout, aisle, geometry.frontZ),
   )
+  const outboundAisleBufferStops = aisleBufferStops.map((stop, index) =>
+    outboundBuffer(stop, aisles[index]),
+  )
   const shippingBufferStops = Array.from(
     { length: compact ? 2 : 4 },
     (_, index) => {
-      const offset = (index - ((compact ? 2 : 4) - 1) / 2) * 1.85
+      const count = compact ? 2 : 4
+      const offset = (index - (count - 1) / 2) * 1.85
       return floorStop(
         `shipping-buffer:${index + 1}`,
         `Pré-embarque ${index + 1}`,
@@ -372,7 +396,9 @@ export function buildIndustrialFlowPlan(
   )
   const outboundStops = [...occupiedPicking, ...occupiedReserve]
     .slice(0, compact ? 2 : 4)
-    .map((location) => rackStop(layout, location, `${location.zone} ${location.address}`))
+    .map((location) =>
+      rackStop(layout, location, `${location.zone} ${location.address}`),
+    )
 
   const aisleAssignments: IndustrialAisleAssignment[] = aisleGroups.map(
     (group, index) => ({
@@ -400,7 +426,7 @@ export function buildIndustrialFlowPlan(
     ),
     vehicle(
       'TP-IN',
-      'Transpaleteira — distribuição para as ruas',
+      'Transpaleteira — recebimento para as ruas',
       'pallet-jack',
       ['inbound-transfer'],
       '#0ea5e9',
@@ -416,7 +442,7 @@ export function buildIndustrialFlowPlan(
     ...aisleAssignments.map((assignment, index) =>
       vehicle(
         assignment.vehicleId,
-        `Empilhadeira das ruas ${assignment.aisles.join(' e ')}`,
+        `Empilhadeira retrátil das ruas ${assignment.aisles.join(' e ')}`,
         'forklift',
         ['putaway', 'replenishment'],
         ['#f59e0b', '#eab308', '#fb7185', '#8b5cf6'][index % 4],
@@ -429,6 +455,21 @@ export function buildIndustrialFlowPlan(
         0.9 + (index % 2) * 0.04,
         0.55 + index * 0.2,
       ),
+    ),
+    vehicle(
+      'TP-OUT',
+      'Transpaleteira — retirada das ruas para o pré-embarque',
+      'pallet-jack',
+      ['replenishment'],
+      '#2563eb',
+      {
+        x: geometry.shippingX - 2.2,
+        y: 0.2,
+        z: geometry.frontZ - 6.1,
+      },
+      Math.PI,
+      1.02,
+      0.5,
     ),
     vehicle(
       'RX-LOAD',
@@ -447,9 +488,13 @@ export function buildIndustrialFlowPlan(
     ),
   ].filter((item) =>
     compact
-      ? ['RX-REC', 'TP-IN', aisleAssignments[0]?.vehicleId, 'RX-LOAD'].includes(
-          item.id,
-        )
+      ? [
+          'RX-REC',
+          'TP-IN',
+          aisleAssignments[0]?.vehicleId,
+          'TP-OUT',
+          'RX-LOAD',
+        ].includes(item.id)
       : true,
   )
 
@@ -458,7 +503,7 @@ export function buildIndustrialFlowPlan(
   const inboundPallets = Math.min(
     inboundCount,
     reserveStops.length,
-    aisleBufferStops.length || 1,
+    aisleBufferStops.length,
   )
 
   for (let index = 0; index < inboundPallets; index += 1) {
@@ -468,7 +513,7 @@ export function buildIndustrialFlowPlan(
     const aisle = destination.address?.split('-')[0] ?? aisles[index % aisles.length]
     const buffer =
       aisleBufferStops.find((stop) => stop.id === `aisle-buffer:${aisle}`) ??
-      aisleBufferStops[index % Math.max(1, aisleBufferStops.length)]
+      aisleBufferStops[index % aisleBufferStops.length]
     const base = index * 10
 
     missions.push(
@@ -510,33 +555,51 @@ export function buildIndustrialFlowPlan(
   }
 
   outboundStops.forEach((source, index) => {
+    const aisle = source.address?.split('-')[0]
+    const aisleStage =
+      outboundAisleBufferStops.find(
+        (stop) => stop.id === `outbound-buffer:${aisle}`,
+      ) ?? outboundAisleBufferStops[index % outboundAisleBufferStops.length]
+    if (!aisleStage) return
+
     const palletId = `FLOW-OUT-${String(index + 1).padStart(2, '0')}`
     const color = PALLET_COLORS[(index + 4) % PALLET_COLORS.length]
-    const buffer = shippingBufferStops[index % shippingBufferStops.length]
+    const preShipping = shippingBufferStops[index % shippingBufferStops.length]
     const truck = truckStops[index % truckStops.length]
     const base = 200 + index * 10
     missions.push(
       mission(layout, {
-        id: `outbound-stage-${index + 1}`,
+        id: `outbound-retrieve-${index + 1}`,
         palletId,
         color,
         role: 'replenishment',
         source,
-        destination: buffer,
+        destination: aisleStage,
         eligibleKinds: ['forklift'],
         priority: 0,
         sequence: base + 1,
+      }),
+      mission(layout, {
+        id: `outbound-transfer-${index + 1}`,
+        palletId,
+        color,
+        role: 'replenishment',
+        source: aisleStage,
+        destination: preShipping,
+        eligibleKinds: ['pallet-jack'],
+        priority: 1,
+        sequence: base + 2,
       }),
       mission(layout, {
         id: `load-truck-${index + 1}`,
         palletId,
         color,
         role: 'shipping',
-        source: buffer,
+        source: preShipping,
         destination: truck,
         eligibleKinds: ['forklift'],
-        priority: 1,
-        sequence: base + 2,
+        priority: 2,
+        sequence: base + 3,
       }),
     )
     initialPalletStops[palletId] = source
@@ -548,11 +611,16 @@ export function buildIndustrialFlowPlan(
     missions,
     initialPalletStops,
     receivingStops: dischargeStops,
-    stagingStops: aisleBufferStops,
+    stagingStops: [
+      ...aisleBufferStops,
+      ...outboundAisleBufferStops,
+      ...shippingBufferStops,
+    ],
     truckStops,
     inboundTruckStops,
     dischargeStops,
     aisleBufferStops,
+    outboundAisleBufferStops,
     shippingBufferStops,
     aisleAssignments,
   }
