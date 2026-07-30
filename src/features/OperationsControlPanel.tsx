@@ -27,7 +27,15 @@ const TRUCK_PHASE_LABEL: Record<TruckCyclePhase, string> = {
   away: 'Em trânsito externo',
 }
 
-function Metric({ label, value, detail }: { label: string; value: string; detail?: string }) {
+function Metric({
+  label,
+  value,
+  detail,
+}: {
+  label: string
+  value: string
+  detail?: string
+}) {
   return (
     <div className="operations-metric">
       <span>{label}</span>
@@ -49,7 +57,6 @@ export function OperationsControlPanel() {
   const setScenario = useOperationsControlStore((state) => state.setScenario)
   const toggleCollapsed = useOperationsControlStore((state) => state.toggleCollapsed)
   const triggerSafety = useOperationsControlStore((state) => state.triggerSafety)
-  const resetSession = useOperationsControlStore((state) => state.resetSession)
 
   useEffect(() => {
     syncUnavailableVehicles()
@@ -58,7 +65,9 @@ export function OperationsControlPanel() {
   const vehicleList = Object.values(vehicles).sort((left, right) =>
     left.id.localeCompare(right.id),
   )
-  const activeOrders = orders.filter((order) => order.status !== 'shipped').slice(0, 5)
+  const activeOrders = orders
+    .filter((order) => order.status !== 'shipped')
+    .slice(0, 5)
   const activeMissions = missions
     .filter((mission) => mission.status !== 'completed')
     .slice(0, 6)
@@ -91,7 +100,9 @@ export function OperationsControlPanel() {
             <span>Cenário operacional</span>
             <select
               value={scenario}
-              onChange={(event) => setScenario(event.target.value as OperationScenario)}
+              onChange={(event) =>
+                setScenario(event.target.value as OperationScenario)
+              }
             >
               {Object.values(SCENARIO_PROFILES).map((profile) => (
                 <option key={profile.id} value={profile.id}>
@@ -169,7 +180,10 @@ export function OperationsControlPanel() {
                 <p className="operations-empty">Aguardando montagem da frota.</p>
               ) : (
                 vehicleList.map((vehicle) => (
-                  <article key={vehicle.id} className={`vehicle-row status-${vehicle.status}`}>
+                  <article
+                    key={vehicle.id}
+                    className={`vehicle-row status-${vehicle.status}`}
+                  >
                     <div>
                       <strong>{vehicle.id}</strong>
                       <span>{VEHICLE_STATUS_LABEL[vehicle.status]}</span>
@@ -259,9 +273,6 @@ export function OperationsControlPanel() {
             </div>
           </section>
 
-          <button type="button" className="operations-reset" onClick={resetSession}>
-            Reiniciar indicadores da sessão
-          </button>
           <p className="operations-disclaimer">
             Dados gerados pela simulação. Não altera o estoque oficial nem confirma
             movimentação física.
