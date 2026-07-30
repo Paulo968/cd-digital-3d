@@ -413,6 +413,16 @@ function loadedTruckPalletIds(context: WarehouseBrainContext): string[] {
     .map(([palletId]) => palletId)
 }
 
+function truckHasOpenLoading(context: WarehouseBrainContext): boolean {
+  const truckStopIds = new Set(context.plan.truckStops.map((stop) => stop.id))
+  return context.missions.some(
+    (mission) =>
+      mission.role === 'shipping' &&
+      truckStopIds.has(mission.destination.id) &&
+      missionIsOpen(mission, context.statuses),
+  )
+}
+
 export function decideWarehouseBrain(
   currentState: WarehouseBrainState,
   context: WarehouseBrainContext,
@@ -434,8 +444,9 @@ export function decideWarehouseBrain(
     loadedPalletIds.length >= minimumDepartureLoad &&
     state.truckLoadedAt !== null &&
     context.now - state.truckLoadedAt >= departureDelay
+  const loadingIsOpen = truckHasOpenLoading(context)
 
-  if (truckIsFull || truckWaitExpired) {
+  if ((truckIsFull || truckWaitExpired) && !loadingIsOpen) {
     const departed = new Set(loadedPalletIds)
     return {
       state: {
