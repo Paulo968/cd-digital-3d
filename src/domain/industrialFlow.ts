@@ -238,6 +238,20 @@ function occupiedLocations(
     )
 }
 
+function balancedReserveLocations(
+  aisles: string[],
+  locations: WarehouseLocation[],
+): WarehouseLocation[] {
+  const firstPerAisle = aisles
+    .map((aisle) => locations.find((location) => location.aisle === aisle))
+    .filter((location): location is WarehouseLocation => Boolean(location))
+  const selectedAddresses = new Set(firstPerAisle.map((location) => location.address))
+  return [
+    ...firstPerAisle,
+    ...locations.filter((location) => !selectedAddresses.has(location.address)),
+  ]
+}
+
 function aisleBuffer(
   layout: WarehouseLayout,
   aisle: string,
@@ -301,7 +315,7 @@ export function vehicleCoversMission(
 ): boolean {
   if (!vehicleId.startsWith('EMP-')) return true
   const coverage = vehicleId.replace('EMP-', '')
-  if (!/^[A-Z0-9]+$/.test(coverage)) return true
+  if (!/^[A-Z]+$/.test(coverage)) return true
   const aisle = missionAisle(missionInput)
   return !aisle || coverage.includes(aisle)
 }
@@ -352,8 +366,9 @@ export function buildIndustrialFlowPlan(
   const emptyReserve = freeLocations(locations, 'reserve')
   const occupiedReserve = occupiedLocations(locations, 'reserve')
   const occupiedPicking = occupiedLocations(locations, 'picking')
-  const reserveStops = emptyReserve.map((location, index) =>
-    rackStop(layout, location, `Reserva ${location.address || index + 1}`),
+  const reserveStops = balancedReserveLocations(aisles, emptyReserve).map(
+    (location, index) =>
+      rackStop(layout, location, `Reserva ${location.address || index + 1}`),
   )
   const outboundStops = [...occupiedPicking, ...occupiedReserve]
     .slice(0, compact ? 2 : 4)
