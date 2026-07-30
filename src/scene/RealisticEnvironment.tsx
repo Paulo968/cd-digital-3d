@@ -280,8 +280,8 @@ function WarehouseShell({
     7,
   )
   const wallHeight = maximumRackHeight + 3.2
-  const beamCount = compact ? 4 : 8
-  const lightCount = compact ? 3 : 7
+  const beamCount = 8
+  const lightCount = 7
 
   return (
     <group>
@@ -318,7 +318,7 @@ function WarehouseShell({
             <meshStandardMaterial
               color="#f8fafc"
               emissive="#dbeafe"
-              emissiveIntensity={compact ? 0.55 : 1}
+              emissiveIntensity={1}
             />
           </mesh>
         )
@@ -326,14 +326,12 @@ function WarehouseShell({
 
       <DockPortal x={geometry.receivingX} frontZ={frontZ} label="RECEBIMENTO" />
       <DockPortal x={geometry.shippingX} frontZ={frontZ} label="EXPEDIÇÃO" />
-      {!compact && (
-        <StaticTruck
-          x={geometry.receivingX}
-          z={frontZ + 5.1}
-          accent="#16a34a"
-          compact={compact}
-        />
-      )}
+      <StaticTruck
+        x={geometry.receivingX}
+        z={frontZ + 5.1}
+        accent="#16a34a"
+        compact={compact}
+      />
       <mesh position={[centerX, 0.018, frontZ + 5.2]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[width, 11]} />
         <meshStandardMaterial color="#374151" roughness={0.98} />
@@ -349,9 +347,8 @@ export function RealisticEnvironment({
 }: RealisticEnvironmentProps) {
   const geometry = useMemo(() => getEnvironmentGeometry(layout), [layout])
 
-  // O modo compacto reduz detalhes visuais, mas não pode apagar papéis do fluxo.
-  // A operação realista também não depende de rota manual, transferência salva ou
-  // preferência de movimento reduzido do aparelho: essas opções não devem congelar o CD.
+  // PC e celular usam o mesmo layout operacional, a mesma frota e as mesmas
+  // missões. O perfil compacto fica restrito à complexidade geométrica.
   const plan = useMemo(
     () => buildIndustrialFlowPlan(layout, locations, geometry, false),
     [geometry, layout, locations],
@@ -396,7 +393,7 @@ export function RealisticEnvironment({
             receivingX={geometry.receivingX}
             shippingX={geometry.shippingX}
             frontZ={geometry.frontZ}
-            compact={compact}
+            compact={false}
           />
           <Html fullscreen zIndexRange={[40, 20]} style={{ pointerEvents: 'none' }}>
             <div style={{ pointerEvents: 'auto' }}>
