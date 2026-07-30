@@ -8,6 +8,8 @@ import { buildTravelPath, type WorldPoint } from './routePlanning'
 import {
   assignOperationMission,
   operationVehicleIsAvailable,
+  recordOperationMission,
+  registerOperationVehicle,
 } from '../store/operationsControlStore'
 
 export type FleetLanePreference = 'left' | 'right'
@@ -71,6 +73,11 @@ function decisionReason(
 export function chooseBrainMissionForVehicle(
   context: DispatchContext,
 ): FleetMission | undefined {
+  registerOperationVehicle({
+    id: context.vehicle.id,
+    label: context.vehicle.label,
+    kind: context.vehicle.kind,
+  })
   if (!operationVehicleIsAvailable(context.vehicle.id)) return undefined
 
   const activeTraffic = new Set(
@@ -105,6 +112,15 @@ export function chooseBrainMissionForVehicle(
 
   if (!selected) return undefined
 
+  recordOperationMission({
+    id: selected.mission.id,
+    palletId: selected.mission.palletId,
+    role: selected.mission.role,
+    sourceId: selected.mission.source.id,
+    sourceLabel: selected.mission.source.label,
+    destinationId: selected.mission.destination.id,
+    destinationLabel: selected.mission.destination.label,
+  })
   assignOperationMission(
     {
       id: context.vehicle.id,
