@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   probeDynamicSafety,
+  resetTrafficFlowMemory,
   stoppingDistance,
   sweptCircleTimeOfImpact,
 } from './dynamicSafety'
@@ -17,6 +18,10 @@ const baseInput = {
 }
 
 describe('dynamicSafety', () => {
+  beforeEach(() => {
+    resetTrafficFlowMemory()
+  })
+
   it('aumenta a distância de parada conforme a velocidade', () => {
     expect(stoppingDistance(4, 7.5, 0.8)).toBeGreaterThan(
       stoppingDistance(2, 7.5, 0.8),
@@ -160,23 +165,87 @@ describe('dynamicSafety', () => {
       radius: 0.8,
       active: true,
       velocity: { x: 0, z: 0 },
+      facing: Math.PI,
     }
 
     const first = probeDynamicSafety({
       ...baseInput,
       vehicleId: 'EMP-01',
       speed: 0,
+      now: 1_000,
       hazards: [hazard],
     })
     const second = probeDynamicSafety({
       ...baseInput,
       vehicleId: 'EMP-02',
+      point: hazard.point,
+      facing: Math.PI,
       speed: 0,
-      hazards: [{ ...hazard, id: 'EMP-01' }],
+      now: 1_010,
+      hazards: [
+        {
+          ...hazard,
+          id: 'EMP-01',
+          point: baseInput.point,
+          facing: 0,
+        },
+      ],
     })
 
     expect(first.hazardId).toBeNull()
+    expect(first.safeSpeed).toBeGreaterThan(0.08)
     expect(second.hazardId).toBe('EMP-01')
     expect(second.safeSpeed).toBe(0)
+  })
+
+  it('mantém o vencedor em movimento até liberar o conflito', () => {
+    const stopped = {
+      id: 'EMP-02',
+      kind: 'vehicle' as const,
+      point: { x: 0, y: 0.2, z: 0.15 },
+      radius: 0.8,
+      active: true,
+      velocity: { x: 0, z: 0 },
+      facing: Math.PI,
+    }
+
+    probeDynamicSafety({
+      ...baseInput,
+      speed: 0,
+      now: 2_000,
+      hazards: [stopped],
+    })
+    const moving = probeDynamicSafety({
+      ...baseInput,
+      speed: 0.45,
+      now: 2_700,
+      hazards: [stopped],
+    })
+
+    expect(moving.hazardId).toBeNull()
+    expect(moving.safeSpeed).toBeGreaterThan(0.08)
+  })
+
+  it('não transforma uma fila no mesmo sentido em ultrapassagem', () => {
+    const result = probeDynamicSafety({
+      ...baseInput,
+      vehicleId: 'EMP-02',
+      speed: 0,
+      now: 5_000,
+      hazards: [
+        {
+          id: 'EMP-01',
+          kind: 'vehicle',
+          point: { x: 0, y: 0.2, z: 2.5 },
+          radius: 0.8,
+          active: true,
+          velocity: { x: 0, z: 0.2 },
+          facing: 0,
+        },
+      ],
+    })
+
+    expect(result.hazardId).toBe('EMP-01')
+    expect(result.safeSpeed).toBeLessThan(Number.POSITIVE_INFINITY)
   })
 })
