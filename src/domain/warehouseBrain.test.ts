@@ -55,7 +55,8 @@ function firstStop(
 
 describe('warehouseBrain', () => {
   it('cria um pallet novo quando existe recebimento e reserva livres', () => {
-    const decision = decideWarehouseBrain(createWarehouseBrainState(0),
+    const decision = decideWarehouseBrain(
+      createWarehouseBrainState(0),
       context({ now: 6_000 }),
     )
 
@@ -138,6 +139,38 @@ describe('warehouseBrain', () => {
       expect(decision.state.shippedPallets).toBe(3)
       expect(decision.state.pendingOutboundPalletIds).toHaveLength(0)
     }
+  })
+
+  it('aguarda a última missão de carregamento antes da partida', () => {
+    const palletStops = Object.fromEntries(
+      plan.truckStops.slice(0, 3).map((stop, index) => [
+        `TRUCK-${index + 1}`,
+        stop,
+      ]),
+    )
+    const loadingMission = {
+      ...plan.missions.find((mission) => mission.role === 'shipping')!,
+      id: 'loading-final-slot',
+      palletId: 'PAL-IN-ROUTE',
+      destination: plan.truckStops[3],
+    }
+    const statuses: Record<string, FleetMissionStatus> = {
+      [loadingMission.id]: 'running',
+    }
+    const decision = decideWarehouseBrain(
+      {
+        ...createWarehouseBrainState(0),
+        truckLoadedAt: 0,
+      },
+      context({
+        now: 11_000,
+        palletStops,
+        missions: [loadingMission],
+        statuses,
+      }),
+    )
+
+    expect(decision.action.type).not.toBe('depart-truck')
   })
 
   it('não duplica missão para um pallet que já está em execução', () => {
