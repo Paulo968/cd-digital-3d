@@ -9,14 +9,14 @@ Protótipo funcional de laboratório logístico orientado por dados para criar l
 - motor 3D otimizado com `InstancedMesh` para estruturas, posições, pallets e cargas;
 - modo operacional focado em leitura, consulta e análise;
 - modo realista com galpão, docas, pátio, caminhões e operação contínua de recebimento, armazenagem, reabastecimento e expedição;
-- central operacional responsiva mostrando pedidos, missões, estoque por zona, frota, eventos de segurança e ciclo do caminhão;
+- central operacional responsiva mostrando pedidos, missões, estoque monitorado por zona, frota, eventos de segurança e ciclo do caminhão;
 - justificativa legível para a escolha do veículo, considerando função, distância vazia, cabeceira e congestionamento;
 - oito cenários controláveis: normal, alta demanda, recebimento intenso, expedição intensa, corredor bloqueado, falha de equipamento, ruptura no picking e equipe reduzida;
 - comandos manuais para provocar pedestre, obstáculo e avaria durante a operação;
 - cérebro operacional determinístico que observa o inventário visual e cria a próxima ação válida;
 - recebimentos automáticos com novos pallets quando existem posições livres;
 - pedidos automáticos selecionando pallets diferentes que realmente estão na reserva ou no picking;
-- camada quantitativa por unidade logística com SKU, descrição, unidades, capacidade e ponto de reposição;
+- camada quantitativa para pallets acompanhados pela operação automática, com SKU, descrição, unidades, capacidade e ponto de reposição;
 - quantidades dos pedidos e das expedições registradas na telemetria demonstrativa;
 - caminhão fecha a carroceria, sai da doca, permanece fora da operação interna e dá lugar ao próximo ciclo;
 - missões de carregamento aguardam enquanto não existe caminhão estacionado na doca;
@@ -72,7 +72,7 @@ O 3D representa os dados carregados. Importação de ERP/WMS é tratada como inf
 
 O inventário automático, os indicadores e os cenários do modo realista são isolados e exclusivamente demonstrativos. Entradas, pedidos, missões e expedições automáticas não alteram o estoque oficial, não criam eventos oficiais de rastreabilidade, não confirmam movimentação física e não representam comando enviado a equipamento real.
 
-A camada quantitativa descreve o conteúdo e a demanda ligados à unidade logística visual. A animação ainda movimenta pallets inteiros e não representa separação física de caixas ou unidades.
+A camada quantitativa descreve o conteúdo e a demanda dos pallets acompanhados pela operação automática. Ela não representa o saldo total de todos os endereços estáticos. A animação ainda movimenta pallets inteiros e não representa separação física de caixas ou unidades.
 
 A pontuação do cérebro procura uma solução operacional coerente, mas não garante o ótimo global. Distâncias calculadas não representam tempo, produtividade ou economia financeira comprovados.
 
