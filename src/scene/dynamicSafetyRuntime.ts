@@ -30,6 +30,12 @@ export function removeRuntimeVehicle(vehicleId: string): void {
   faultedVehicles.delete(vehicleId)
 }
 
+export function readRuntimeVehicleState(
+  vehicleId: string,
+): RuntimeVehicleState | undefined {
+  return vehicles.get(vehicleId)
+}
+
 export function upsertRuntimeHazard(hazard: DynamicHazard): void {
   hazards.set(hazard.id, hazard)
 }
