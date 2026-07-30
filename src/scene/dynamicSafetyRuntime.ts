@@ -1,5 +1,9 @@
 import type { DynamicHazard } from '../domain/dynamicSafety'
 import type { WorldPoint } from '../domain/routePlanning'
+import {
+  publishOperationVehicleRuntime,
+  setOperationVehicleFault,
+} from '../store/operationsControlStore'
 
 export interface RuntimeVehicleState {
   id: string
@@ -22,6 +26,7 @@ export function upsertRuntimeVehicle(state: RuntimeVehicleState): void {
     radius: state.radius,
     active: state.active,
   })
+  publishOperationVehicleRuntime(state.id, state.speed, state.active)
 }
 
 export function removeRuntimeVehicle(vehicleId: string): void {
@@ -51,6 +56,7 @@ export function readRuntimeHazards(): Iterable<DynamicHazard> {
 export function setRuntimeVehicleFault(vehicleId: string, faulted: boolean): void {
   if (faulted) faultedVehicles.add(vehicleId)
   else faultedVehicles.delete(vehicleId)
+  setOperationVehicleFault(vehicleId, faulted)
 }
 
 export function isRuntimeVehicleFaulted(vehicleId: string): boolean {
