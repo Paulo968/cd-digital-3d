@@ -534,10 +534,9 @@ function outboundCandidates(
 ): string[] {
   const pending = new Set(state.pendingOutboundPalletIds)
   const truckIds = new Set(context.plan.truckStops.map((stop) => stop.id))
-  const industrial = industrialPlanIsActive(context.plan)
-  const bufferIds = new Set(
-    industrial ? context.plan.shippingBufferStops.map((stop) => stop.id) : [],
-  )
+  const bufferIds = industrialPlanIsActive(context.plan)
+    ? new Set(context.plan.shippingBufferStops.map((stop) => stop.id))
+    : new Set<string>()
 
   return Object.entries(context.palletStops)
     .filter(([, stop]) => {
