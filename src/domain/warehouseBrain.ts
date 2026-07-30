@@ -7,7 +7,17 @@ import {
   type RealisticFleetPlan,
 } from './realisticFleet'
 import type { RealisticMissionStop } from './realisticMissionQueue'
-import { buildTravelPath } from './routePlanning'
+import {
+  buildTravelPath,
+  getLocationAccessPoint,
+  getLocationWorldPoint,
+} from './routePlanning'
+import {
+  findLocationRow,
+  getForkCarriageHeight,
+  getPalletCenterY,
+} from './warehouseGeometry'
+import type { WarehouseLocation } from './warehouse'
 
 const LIVE_PALLET_COLORS = [
   '#38bdf8',
@@ -63,11 +73,17 @@ export interface WarehouseBrainContext {
   now: number
   compact: boolean
   layout: WarehouseLayout
+  locations: WarehouseLocation[]
   plan: RealisticFleetPlan
   palletStops: Record<string, RealisticMissionStop | null>
   palletColors: Record<string, string>
   missions: FleetMission[]
   statuses: Record<string, FleetMissionStatus>
+}
+
+interface BrainAddressStops {
+  reserve: RealisticMissionStop[]
+  picking: RealisticMissionStop[]
 }
 
 export function createWarehouseBrainState(now = 0): WarehouseBrainState {
@@ -81,6 +97,81 @@ export function createWarehouseBrainState(now = 0): WarehouseBrainState {
     lastOrderAt: now,
     truckLoadedAt: null,
     shippedPallets: 0,
+  }
+}
+
+function rackStop(
+  layout: WarehouseLayout,
+  location: WarehouseLocation,
+  label: string,
+): RealisticMissionStop {
+  const point = getLocationWorldPoint(layout, location)
+  const row = findLocationRow(layout, location)
+  const facing = row
+    ? row.rotationY + (location.side === 'left' ? 0 : Math.PI)
+    : 0
+
+  return {
+    id: `address:${location.address}`,
+    kind: 'address',
+    label,
+    address: location.address,
+    access: getLocationAccessPoint(layout, location),
+    restingPoint: {
+      x: point.x,
+      y: getPalletCenterY(layout, location),
+      z: point.z,
+    },
+    facing,
+    forkHeight: getForkCarriageHeight(layout, location),
+  }
+}
+
+function preferredLocations(
+  locations: WarehouseLocation[],
+  zone: WarehouseLocation['zone'],
+  quantity: number,
+  lowestLevelOnly = false,
+): WarehouseLocation[] {
+  const candidates = locations.filter(
+    (location) =>
+      location.zone === zone &&
+      location.status !== 'blocked' &&
+      (!lowestLevelOnly || location.level === 1),
+  )
+  const empty = candidates.filter(
+    (location) => location.status === 'empty' && location.quantity === 0,
+  )
+  const seen = new Set<string>()
+
+  return [...empty, ...candidates]
+    .filter((location) => {
+      if (seen.has(location.address)) return false
+      seen.add(location.address)
+      return true
+    })
+    .slice(0, quantity)
+}
+
+function brainAddressStops(context: WarehouseBrainContext): BrainAddressStops {
+  const reserveQuantity = context.compact ? 6 : 10
+  const pickingQuantity = context.compact ? 3 : 6
+  return {
+    reserve: preferredLocations(
+      context.locations,
+      'reserve',
+      reserveQuantity,
+    ).map((location, index) =>
+      rackStop(context.layout, location, `Reserva dinâmica ${index + 1}`),
+    ),
+    picking: preferredLocations(
+      context.locations,
+      'picking',
+      pickingQuantity,
+      true,
+    ).map((location, index) =>
+      rackStop(context.layout, location, `Picking dinâmico ${index + 1}`),
+    ),
   }
 }
 
@@ -195,6 +286,7 @@ function createMission(
 function nextOperationalMission(
   state: WarehouseBrainState,
   context: WarehouseBrainContext,
+  addressStops: BrainAddressStops,
 ): { state: WarehouseBrainState; mission: FleetMission } | undefined {
   const openPallets = openMissionPalletIds(context.missions, context.statuses)
   const occupied = occupiedStopIds(context.palletStops)
@@ -231,7 +323,7 @@ function nextOperationalMission(
     }
 
     if (stopBelongsTo(source, context.plan.stagingStops)) {
-      const destination = freeStop(context.plan.reserveStops, occupied, reserved)
+      const destination = freeStop(addressStops.reserve, occupied, reserved)
       if (destination) {
         candidates.push({
           palletId,
@@ -249,8 +341,8 @@ function nextOperationalMission(
     if (pendingOutbound.has(palletId)) {
       const destination = freeStop(context.plan.truckStops, occupied, reserved)
       if (!destination) return
-      const inPicking = stopBelongsTo(source, context.plan.pickingStops)
-      const inReserve = stopBelongsTo(source, context.plan.reserveStops)
+      const inPicking = stopBelongsTo(source, addressStops.picking)
+      const inReserve = stopBelongsTo(source, addressStops.reserve)
       if (!inPicking && !inReserve) return
 
       candidates.push({
@@ -265,14 +357,14 @@ function nextOperationalMission(
       return
     }
 
-    if (!stopBelongsTo(source, context.plan.reserveStops)) return
-    const pickingOccupancy = context.plan.pickingStops.filter((stop) =>
+    if (!stopBelongsTo(source, addressStops.reserve)) return
+    const pickingOccupancy = addressStops.picking.filter((stop) =>
       occupied.has(stop.id),
     ).length
     const pickingTarget = context.compact ? 1 : 2
     if (pickingOccupancy >= pickingTarget) return
 
-    const destination = freeStop(context.plan.pickingStops, occupied, reserved)
+    const destination = freeStop(addressStops.picking, occupied, reserved)
     if (destination) {
       candidates.push({
         palletId,
@@ -296,6 +388,7 @@ function nextOperationalMission(
 function outboundCandidates(
   state: WarehouseBrainState,
   context: WarehouseBrainContext,
+  addressStops: BrainAddressStops,
 ): string[] {
   const pending = new Set(state.pendingOutboundPalletIds)
   const truckStopIds = new Set(context.plan.truckStops.map((stop) => stop.id))
@@ -304,8 +397,8 @@ function outboundCandidates(
     .filter(([, stop]) => {
       if (!stop || truckStopIds.has(stop.id)) return false
       return (
-        stopBelongsTo(stop, context.plan.reserveStops) ||
-        stopBelongsTo(stop, context.plan.pickingStops)
+        stopBelongsTo(stop, addressStops.reserve) ||
+        stopBelongsTo(stop, addressStops.picking)
       )
     })
     .map(([palletId]) => palletId)
@@ -325,6 +418,7 @@ export function decideWarehouseBrain(
   context: WarehouseBrainContext,
 ): WarehouseBrainDecision {
   let state = { ...currentState }
+  const addressStops = brainAddressStops(context)
   const loadedPalletIds = loadedTruckPalletIds(context)
 
   if (loadedPalletIds.length > 0 && state.truckLoadedAt === null) {
@@ -356,7 +450,11 @@ export function decideWarehouseBrain(
     }
   }
 
-  const operationalMission = nextOperationalMission(state, context)
+  const operationalMission = nextOperationalMission(
+    state,
+    context,
+    addressStops,
+  )
   if (operationalMission) {
     return {
       state: operationalMission.state,
@@ -366,7 +464,7 @@ export function decideWarehouseBrain(
 
   const maximumOpenOrders = context.compact ? 2 : 4
   const orderInterval = context.compact ? 7_000 : 4_800
-  const candidates = outboundCandidates(state, context)
+  const candidates = outboundCandidates(state, context, addressStops)
   if (
     state.pendingOutboundPalletIds.length < maximumOpenOrders &&
     candidates.length > 0 &&
@@ -391,17 +489,11 @@ export function decideWarehouseBrain(
   }
 
   const inboundInterval = context.compact ? 8_500 : 5_800
-  const receiving = freeStop(
-    context.plan.receivingStops,
-    occupiedStopIds(context.palletStops),
-    reservedDestinationIds(context.missions, context.statuses),
-  )
+  const occupied = occupiedStopIds(context.palletStops)
+  const reserved = reservedDestinationIds(context.missions, context.statuses)
+  const receiving = freeStop(context.plan.receivingStops, occupied, reserved)
   const reserveHasCapacity = Boolean(
-    freeStop(
-      context.plan.reserveStops,
-      occupiedStopIds(context.palletStops),
-      reservedDestinationIds(context.missions, context.statuses),
-    ),
+    freeStop(addressStops.reserve, occupied, reserved),
   )
 
   if (
