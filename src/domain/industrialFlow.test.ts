@@ -51,6 +51,7 @@ describe('industrialFlow', () => {
 
     expect(ids).toContain('RX-REC')
     expect(ids).toContain('TP-IN')
+    expect(ids).toContain('TP-OUT')
     expect(ids).toContain('RX-LOAD')
     expect(ids).toContain('EMP-AB')
     expect(ids).toContain('EMP-CD')
@@ -59,6 +60,9 @@ describe('industrialFlow', () => {
 
     expect(plan.vehicles.find((vehicle) => vehicle.id === 'RX-REC')?.roles).toEqual([
       'inbound-transfer',
+    ])
+    expect(plan.vehicles.find((vehicle) => vehicle.id === 'TP-OUT')?.roles).toEqual([
+      'replenishment',
     ])
     expect(plan.vehicles.find((vehicle) => vehicle.id === 'RX-LOAD')?.roles).toEqual([
       'shipping',
@@ -142,8 +146,10 @@ describe('industrialFlow', () => {
     )
   })
 
-  it('leva a expedição ao pré-embarque antes da RX carregar o caminhão', () => {
-    const outbound = plan.missions.find((mission) => mission.id.startsWith('outbound-stage-'))
+  it('encadeia retrátil, transpaleteira e RX antes do caminhão sair', () => {
+    const outbound = plan.missions.find((mission) =>
+      mission.id.startsWith('outbound-retrieve-'),
+    )
     expect(outbound).toBeDefined()
     if (!outbound) return
 
@@ -152,18 +158,29 @@ describe('industrialFlow', () => {
       ...createWarehouseBrainState(0),
       pendingOutboundPalletIds: [palletId],
     }
-    const staging = decideWarehouseBrain(
+    const retrieval = decideWarehouseBrain(
       brain,
       context({ [palletId]: outbound.source }),
     )
-    expect(staging.action.type).toBe('create-mission')
-    if (staging.action.type !== 'create-mission') return
-    expect(staging.action.mission.destination.id).toMatch(/^shipping-buffer:/)
-    expect(staging.action.mission.role).toBe('replenishment')
+    expect(retrieval.action.type).toBe('create-mission')
+    if (retrieval.action.type !== 'create-mission') return
+    expect(retrieval.action.mission.destination.id).toMatch(/^outbound-buffer:/)
+    expect(retrieval.action.mission.role).toBe('replenishment')
+    expect(retrieval.action.mission.eligibleKinds).toEqual(['forklift'])
+
+    const floorTransfer = decideWarehouseBrain(
+      retrieval.state,
+      context({ [palletId]: retrieval.action.mission.destination }),
+    )
+    expect(floorTransfer.action.type).toBe('create-mission')
+    if (floorTransfer.action.type !== 'create-mission') return
+    expect(floorTransfer.action.mission.source.id).toMatch(/^outbound-buffer:/)
+    expect(floorTransfer.action.mission.destination.id).toMatch(/^shipping-buffer:/)
+    expect(floorTransfer.action.mission.eligibleKinds).toEqual(['pallet-jack'])
 
     const loading = decideWarehouseBrain(
-      staging.state,
-      context({ [palletId]: staging.action.mission.destination }),
+      floorTransfer.state,
+      context({ [palletId]: floorTransfer.action.mission.destination }),
     )
     expect(loading.action.type).toBe('create-mission')
     if (loading.action.type !== 'create-mission') return
