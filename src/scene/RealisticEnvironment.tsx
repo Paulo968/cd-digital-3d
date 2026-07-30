@@ -1,8 +1,8 @@
-import { Html } from '@react-three/drei'
+import { Html, Text } from '@react-three/drei'
 import { useMemo } from 'react'
 import * as THREE from 'three'
 import type { WarehouseLayout } from '../domain/layout'
-import { buildRealisticFleetPlan } from '../domain/realisticFleet'
+import { buildIndustrialFlowPlan } from '../domain/industrialFlow'
 import type {
   RealisticDockGeometry,
   RealisticMissionStop,
@@ -12,7 +12,7 @@ import {
   PALLET_SUPPORT_CLEARANCE,
 } from '../domain/warehouseGeometry'
 import type { WarehouseLocation } from '../domain/warehouse'
-import { OperationsControlPanel } from '../features/OperationsControlPanel'
+import { RealisticOperationsMenu } from '../features/RealisticOperationsMenu'
 import { FleetOperation } from './FleetOperation'
 import { LiveTruck } from './LiveTruck'
 import { SafetyScenarioActors } from './SafetyScenarioActors'
@@ -115,7 +115,15 @@ function getEnvironmentGeometry(layout: WarehouseLayout): EnvironmentGeometry {
   }
 }
 
-function DockPortal({ x, frontZ }: { x: number; frontZ: number }) {
+function DockPortal({
+  x,
+  frontZ,
+  label,
+}: {
+  x: number
+  frontZ: number
+  label: string
+}) {
   return (
     <group position={[x, 0, frontZ]}>
       <mesh position={[0, 2.35, 0]} castShadow>
@@ -138,6 +146,15 @@ function DockPortal({ x, frontZ }: { x: number; frontZ: number }) {
           <meshStandardMaterial color="#f59e0b" />
         </mesh>
       ))}
+      <Text
+        position={[0, 3.1, -0.12]}
+        fontSize={0.38}
+        color="#f8fafc"
+        anchorX="center"
+        anchorY="middle"
+      >
+        {label}
+      </Text>
     </group>
   )
 }
@@ -154,7 +171,6 @@ function StaticTruck({
   compact: boolean
 }) {
   const wheelSegments = compact ? 10 : 16
-
   return (
     <group position={[x, 0.15, z]}>
       <mesh position={[0, 0.35, -1.65]} receiveShadow castShadow>
@@ -200,29 +216,44 @@ function StaticTruck({
 }
 
 function FloorSupports({ stops }: { stops: RealisticMissionStop[] }) {
+  const unique = stops.filter(
+    (stop, index, values) =>
+      values.findIndex((candidate) => candidate.id === stop.id) === index,
+  )
   return (
     <>
-      {stops.map((stop) => {
+      {unique.map((stop) => {
         const supportHeight = Math.max(
           0.04,
-          stop.restingPoint.y -
-            PALLET_HEIGHT / 2 -
-            PALLET_SUPPORT_CLEARANCE,
+          stop.restingPoint.y - PALLET_HEIGHT / 2 - PALLET_SUPPORT_CLEARANCE,
         )
         return (
-          <mesh
-            key={`support-${stop.id}`}
-            position={[
-              stop.restingPoint.x,
-              supportHeight / 2,
-              stop.restingPoint.z,
-            ]}
-            receiveShadow
-            castShadow
-          >
-            <boxGeometry args={[1.9, supportHeight, 1.35]} />
-            <meshStandardMaterial color="#475569" metalness={0.18} roughness={0.82} />
-          </mesh>
+          <group key={`support-${stop.id}`}>
+            <mesh
+              position={[
+                stop.restingPoint.x,
+                supportHeight / 2,
+                stop.restingPoint.z,
+              ]}
+              receiveShadow
+              castShadow
+            >
+              <boxGeometry args={[1.9, supportHeight, 1.35]} />
+              <meshStandardMaterial color="#475569" metalness={0.18} roughness={0.82} />
+            </mesh>
+            {!stop.id.startsWith('receiving:') && !stop.id.startsWith('shipping-buffer:') ? null : (
+              <Text
+                position={[stop.restingPoint.x, 0.07, stop.restingPoint.z + 0.82]}
+                rotation={[-Math.PI / 2, 0, 0]}
+                fontSize={0.2}
+                color="#bae6fd"
+                anchorX="center"
+                anchorY="middle"
+              >
+                {stop.label}
+              </Text>
+            )}
+          </group>
         )
       })}
     </>
@@ -290,8 +321,8 @@ function WarehouseShell({
         )
       })}
 
-      <DockPortal x={geometry.receivingX} frontZ={frontZ} />
-      <DockPortal x={geometry.shippingX} frontZ={frontZ} />
+      <DockPortal x={geometry.receivingX} frontZ={frontZ} label="RECEBIMENTO" />
+      <DockPortal x={geometry.shippingX} frontZ={frontZ} label="EXPEDIÇÃO" />
       {!compact && (
         <StaticTruck
           x={geometry.receivingX}
@@ -300,7 +331,6 @@ function WarehouseShell({
           compact={compact}
         />
       )}
-
       <mesh position={[centerX, 0.018, frontZ + 5.2]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[width, 11]} />
         <meshStandardMaterial color="#374151" roughness={0.98} />
@@ -317,7 +347,7 @@ export function RealisticEnvironment({
 }: RealisticEnvironmentProps) {
   const geometry = useMemo(() => getEnvironmentGeometry(layout), [layout])
   const plan = useMemo(
-    () => buildRealisticFleetPlan(layout, locations, geometry, compact),
+    () => buildIndustrialFlowPlan(layout, locations, geometry, compact),
     [compact, geometry, layout, locations],
   )
   const automaticOperationVisible = animated && plan.missions.length > 0
@@ -325,7 +355,13 @@ export function RealisticEnvironment({
   return (
     <group>
       <WarehouseShell layout={layout} geometry={geometry} compact={compact} />
-      <FloorSupports stops={[...plan.receivingStops, ...plan.stagingStops]} />
+      <FloorSupports
+        stops={[
+          ...plan.dischargeStops,
+          ...plan.aisleBufferStops,
+          ...plan.shippingBufferStops,
+        ]}
+      />
       {!automaticOperationVisible && (
         <StaticTruck
           x={geometry.shippingX}
@@ -356,7 +392,7 @@ export function RealisticEnvironment({
           />
           <Html fullscreen zIndexRange={[40, 20]} style={{ pointerEvents: 'none' }}>
             <div style={{ pointerEvents: 'auto' }}>
-              <OperationsControlPanel />
+              <RealisticOperationsMenu />
             </div>
           </Html>
         </>
