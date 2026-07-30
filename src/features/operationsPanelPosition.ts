@@ -39,6 +39,11 @@ export const COMPACT_PANEL_BOUNDS: PanelBounds = {
   bottomInset: 78,
 }
 
+export const MIN_MEASURED_PANEL_SIZE: PanelSize = {
+  width: 120,
+  height: 44,
+}
+
 function finite(value: number, fallback: number): number {
   return Number.isFinite(value) ? value : fallback
 }
@@ -46,6 +51,15 @@ function finite(value: number, fallback: number): number {
 function clamp(value: number, minimum: number, maximum: number): number {
   if (maximum < minimum) return minimum
   return Math.min(Math.max(value, minimum), maximum)
+}
+
+export function panelSizeIsUsable(size: PanelSize): boolean {
+  return (
+    Number.isFinite(size.width) &&
+    Number.isFinite(size.height) &&
+    size.width >= MIN_MEASURED_PANEL_SIZE.width &&
+    size.height >= MIN_MEASURED_PANEL_SIZE.height
+  )
 }
 
 export function clampPanelPosition(
