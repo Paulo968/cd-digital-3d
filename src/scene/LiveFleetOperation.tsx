@@ -260,11 +260,11 @@ function LiveVehicleRunner({
 
     return () => {
       removeRuntimeVehicle(vehicle.id)
-      if (vehicle.id !== 'EMP-01' || !vehicleRef.current) return
+      if (vehicle.id !== 'EMP-01') return
       parkAtPoint(
-        currentVehiclePoint(vehicleRef.current),
+        currentVehiclePoint(root),
         'Última posição da EMP-01 no modo realista',
-        vehicleRef.current.rotation.y,
+        root.rotation.y,
       )
     }
   }, [initialPose, invalidate, parkAtPoint, registerVehicle, vehicle.id])
@@ -684,19 +684,20 @@ export function LiveFleetOperation({
       missions,
       statuses,
     })
+    const action = decision.action
     setBrain(decision.state)
 
-    if (decision.action.type === 'receive-pallet') {
+    if (action.type === 'receive-pallet') {
       setPalletStops((current) => ({
         ...current,
-        [decision.action.palletId]: decision.action.stop,
+        [action.palletId]: action.stop,
       }))
       setPalletColors((current) => ({
         ...current,
-        [decision.action.palletId]: decision.action.color,
+        [action.palletId]: action.color,
       }))
-    } else if (decision.action.type === 'create-mission') {
-      const mission = decision.action.mission
+    } else if (action.type === 'create-mission') {
+      const mission = action.mission
       setMissions((current) =>
         current.some((item) => item.id === mission.id)
           ? current
@@ -706,8 +707,8 @@ export function LiveFleetOperation({
         ...current,
         [mission.id]: 'pending',
       }))
-    } else if (decision.action.type === 'depart-truck') {
-      const departed = new Set(decision.action.palletIds)
+    } else if (action.type === 'depart-truck') {
+      const departed = new Set(action.palletIds)
       setPalletStops((current) => {
         const next = { ...current }
         departed.forEach((palletId) => {
