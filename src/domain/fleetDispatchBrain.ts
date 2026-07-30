@@ -3,6 +3,7 @@ import type { OperationZone } from './operationsControl'
 import { palletQuantity, productForPallet } from './operationsControl'
 import type {
   FleetMission,
+  FleetMissionRole,
   FleetVehicleDefinition,
 } from './realisticFleet'
 import { buildTrafficCells, trafficCellsConflict } from './realisticFleet'
@@ -32,6 +33,13 @@ interface ScoredMission {
   emptyTravel: number
   congestion: number
   rolePenalty: number
+}
+
+const ROLE_LABEL: Record<FleetMissionRole, string> = {
+  'inbound-transfer': 'transferência de entrada',
+  putaway: 'armazenagem',
+  replenishment: 'reabastecimento',
+  shipping: 'expedição',
 }
 
 function distance(left: WorldPoint, right: WorldPoint): number {
@@ -68,7 +76,7 @@ function decisionReason(
     selected.congestion === 0
       ? 'rota sem conflito relevante'
       : `${selected.congestion} células compartilhadas fora dos pontos críticos`
-  return `${vehicle.label}: compatível com ${selected.mission.role}, ${selected.emptyTravel.toFixed(
+  return `${vehicle.label}: compatível com ${ROLE_LABEL[selected.mission.role]}, ${selected.emptyTravel.toFixed(
     1,
   )} m até a origem, preferência pela cabeceira ${lane} e ${congestionText}.`
 }
