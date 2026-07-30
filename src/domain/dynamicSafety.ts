@@ -1,4 +1,5 @@
 import type { WorldPoint } from './routePlanning'
+import { TrafficFlowCoordinator } from './trafficFlowCoordinator'
 
 export type DynamicHazardKind = 'vehicle' | 'person' | 'obstacle'
 
@@ -14,6 +15,7 @@ export interface DynamicHazard {
   radius: number
   active: boolean
   velocity?: PlanarVelocity
+  facing?: number
 }
 
 export interface SafetyProbeInput {
@@ -28,6 +30,7 @@ export interface SafetyProbeInput {
   lateralMargin: number
   ignoredHazardIds?: Iterable<string>
   predictionHorizon?: number
+  now?: number
 }
 
 export interface SafetyProbeResult {
@@ -43,6 +46,15 @@ export interface SafetyProbeResult {
 }
 
 const NO_HAZARD_DISTANCE = Number.POSITIVE_INFINITY
+const trafficFlowCoordinator = new TrafficFlowCoordinator()
+
+export function resetTrafficFlowMemory(): void {
+  trafficFlowCoordinator.reset()
+}
+
+export function forgetTrafficFlowVehicle(vehicleId: string): void {
+  trafficFlowCoordinator.clearVehicle(vehicleId)
+}
 
 export function stoppingDistance(
   speed: number,
@@ -96,25 +108,6 @@ function clearanceAtTime(
   return Math.max(0, Math.hypot(x, z) - combinedRadius)
 }
 
-function stationaryVehicleHasPriority(
-  vehicleId: string,
-  ownSpeed: number,
-  hazard: DynamicHazard,
-  separation: number,
-  combinedRadius: number,
-): boolean {
-  if (hazard.kind !== 'vehicle' || ownSpeed > 0.08) return false
-  const hazardVelocity = hazard.velocity ?? { x: 0, z: 0 }
-  const hazardSpeed = Math.hypot(hazardVelocity.x, hazardVelocity.z)
-  if (hazardSpeed > 0.12) return false
-  if (separation > combinedRadius + 0.35) return false
-
-  // Se dois equipamentos estiverem parados e sobrepostos no início,
-  // apenas um recebe passagem. A regra é determinística, portanto não
-  // permite que os dois avancem ao mesmo tempo nem fiquem travados para sempre.
-  return vehicleId.localeCompare(hazard.id) < 0
-}
-
 export function probeDynamicSafety(input: SafetyProbeInput): SafetyProbeResult {
   // routePlanning usa atan2(deltaX, deltaZ): facing 0 aponta para +Z.
   const headingX = Math.sin(input.facing)
@@ -125,6 +118,13 @@ export function probeDynamicSafety(input: SafetyProbeInput): SafetyProbeResult {
   }
   const ignored = new Set(input.ignoredHazardIds ?? [])
   const predictionHorizon = Math.max(0.5, input.predictionHorizon ?? 3.5)
+  const now = input.now ?? Date.now()
+  const requiredStoppingDistance = stoppingDistance(
+    input.speed,
+    input.brakingDeceleration,
+    input.reactionBuffer,
+  )
+  let flowSpeedLimit = Number.POSITIVE_INFINITY
   let nearest:
     | {
         hazard: DynamicHazard
@@ -153,20 +153,8 @@ export function probeDynamicSafety(input: SafetyProbeInput): SafetyProbeResult {
     const combinedRadius =
       input.vehicleRadius + hazard.radius + input.lateralMargin
     const separation = Math.hypot(deltaX, deltaZ)
-
-    if (
-      stationaryVehicleHasPriority(
-        input.vehicleId,
-        input.speed,
-        hazard,
-        separation,
-        combinedRadius,
-      )
-    ) {
-      continue
-    }
-
     const hazardVelocity = hazard.velocity ?? { x: 0, z: 0 }
+    const hazardSpeed = Math.hypot(hazardVelocity.x, hazardVelocity.z)
     const relativeVelocity = {
       x: hazardVelocity.x - ownVelocity.x,
       z: hazardVelocity.z - ownVelocity.z,
@@ -196,6 +184,36 @@ export function probeDynamicSafety(input: SafetyProbeInput): SafetyProbeResult {
       0,
       forward - input.vehicleRadius - hazard.radius,
     )
+
+    if (hazard.kind === 'vehicle') {
+      const flowDecision = trafficFlowCoordinator.decide({
+        vehicle: {
+          id: input.vehicleId,
+          point: input.point,
+          facing: input.facing,
+          speed: input.speed,
+          velocity: ownVelocity,
+        },
+        hazard: {
+          id: hazard.id,
+          point: hazard.point,
+          facing: hazard.facing,
+          speed: hazardSpeed,
+          velocity: hazard.velocity,
+        },
+        separation,
+        blocked:
+          freeDistance <= requiredStoppingDistance + 1.15 || predictedContact,
+        immediateConflict: freeDistance <= 0.05,
+        now,
+      })
+
+      if (flowDecision.action === 'proceed') {
+        flowSpeedLimit = Math.min(flowSpeedLimit, flowDecision.speedLimit)
+        continue
+      }
+    }
+
     const urgency =
       freeDistance +
       (Number.isFinite(timeToCollision)
@@ -214,12 +232,6 @@ export function probeDynamicSafety(input: SafetyProbeInput): SafetyProbeResult {
     }
   }
 
-  const requiredStoppingDistance = stoppingDistance(
-    input.speed,
-    input.brakingDeceleration,
-    input.reactionBuffer,
-  )
-
   if (!nearest) {
     return {
       hazardId: null,
@@ -227,7 +239,7 @@ export function probeDynamicSafety(input: SafetyProbeInput): SafetyProbeResult {
       forwardDistance: NO_HAZARD_DISTANCE,
       lateralDistance: NO_HAZARD_DISTANCE,
       stoppingDistance: requiredStoppingDistance,
-      safeSpeed: Number.POSITIVE_INFINITY,
+      safeSpeed: flowSpeedLimit,
       emergency: false,
       timeToCollision: Number.POSITIVE_INFINITY,
       predictedClearance: Number.POSITIVE_INFINITY,
@@ -245,7 +257,11 @@ export function probeDynamicSafety(input: SafetyProbeInput): SafetyProbeResult {
           Math.max(0.45, nearest.timeToCollision + input.reactionBuffer * 0.35),
       )
     : Number.POSITIVE_INFINITY
-  const safeSpeed = Math.min(distanceSafeSpeed, collisionSafeSpeed)
+  const safeSpeed = Math.min(
+    distanceSafeSpeed,
+    collisionSafeSpeed,
+    flowSpeedLimit,
+  )
   const emergencyByTime =
     Number.isFinite(nearest.timeToCollision) &&
     nearest.timeToCollision <= Math.max(0.55, input.reactionBuffer)

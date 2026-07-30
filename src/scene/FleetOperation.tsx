@@ -2,6 +2,7 @@ import type { WarehouseLayout } from '../domain/layout'
 import type { RealisticFleetPlan } from '../domain/realisticFleet'
 import type { WarehouseLocation } from '../domain/warehouse'
 import { LiveFleetOperation } from './LiveFleetOperation'
+import { TrafficFlowMarkers } from './TrafficFlowMarkers'
 
 interface FleetOperationProps {
   layout: WarehouseLayout
@@ -22,13 +23,17 @@ export function FleetOperation({
   layout,
   locations,
   plan,
+  compact,
 }: FleetOperationProps) {
   return (
-    <LiveFleetOperation
-      layout={layout}
-      locations={locations}
-      plan={plan}
-      compact={false}
-    />
+    <>
+      <TrafficFlowMarkers layout={layout} compact={compact} />
+      <LiveFleetOperation
+        layout={layout}
+        locations={locations}
+        plan={plan}
+        compact={false}
+      />
+    </>
   )
 }
