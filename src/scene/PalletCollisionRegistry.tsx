@@ -43,6 +43,7 @@ export function PalletCollisionRegistry({
   plan: RealisticFleetPlan | IndustrialFlowPlan
 }) {
   const pallets = useOperationsControlStore((state) => state.pallets)
+  const missions = useOperationsControlStore((state) => state.missions)
   const activeHazardsRef = useRef<Set<string>>(new Set())
   const observedPalletsRef = useRef<Set<string>>(new Set())
   const departedPalletsRef = useRef<Set<string>>(new Set())
@@ -54,6 +55,15 @@ export function PalletCollisionRegistry({
     })
     return result
   }, [plan])
+  const palletsInRunningMissions = useMemo(
+    () =>
+      new Set(
+        missions
+          .filter((mission) => mission.status === 'running')
+          .map((mission) => mission.palletId),
+      ),
+    [missions],
+  )
 
   useEffect(() => {
     const nextHazards = new Set<string>()
@@ -73,6 +83,10 @@ export function PalletCollisionRegistry({
     ])
 
     palletIds.forEach((palletId) => {
+      // Durante coleta e transporte, o pallet da missão deixa de ser um obstáculo
+      // externo. Os demais pallets continuam bloqueando fisicamente a circulação.
+      if (palletsInRunningMissions.has(palletId)) return
+
       const tracked = pallets[palletId]
       const stop = tracked
         ? lookup.get(tracked.stopId)
@@ -100,7 +114,7 @@ export function PalletCollisionRegistry({
       if (!nextHazards.has(hazardId)) removeRuntimeHazard(hazardId)
     })
     activeHazardsRef.current = nextHazards
-  }, [lookup, pallets, plan.initialPalletStops])
+  }, [lookup, pallets, palletsInRunningMissions, plan.initialPalletStops])
 
   useEffect(
     () => () => {
