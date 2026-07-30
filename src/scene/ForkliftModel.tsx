@@ -12,6 +12,8 @@ interface ForkliftModelProps {
   compact?: boolean
   reportRuntimePose?: boolean
   accent?: string
+  emergencyBraking?: boolean
+  faulted?: boolean
 }
 
 const WORLD_POSITION = new THREE.Vector3()
@@ -26,6 +28,8 @@ export function ForkliftModel({
   compact = false,
   reportRuntimePose = true,
   accent = '#f59e0b',
+  emergencyBraking = false,
+  faulted = false,
 }: ForkliftModelProps) {
   const rootRef = useRef<THREE.Group | null>(null)
   const internalCarriageRef = useRef<THREE.Group | null>(null)
@@ -68,6 +72,29 @@ export function ForkliftModel({
             <meshStandardMaterial color="#111827" roughness={0.92} />
           </mesh>
         )),
+      )}
+
+      {[-0.38, 0.38].map((x) => (
+        <mesh key={`brake-${x}`} position={[x, 0.43, 0.82]}>
+          <boxGeometry args={[0.16, 0.12, 0.05]} />
+          <meshStandardMaterial
+            color={emergencyBraking || faulted ? '#ef4444' : '#450a0a'}
+            emissive={emergencyBraking || faulted ? '#ef4444' : '#000000'}
+            emissiveIntensity={emergencyBraking || faulted ? 3 : 0}
+            roughness={0.4}
+          />
+        </mesh>
+      ))}
+
+      {faulted && (
+        <mesh position={[0, 1.43, 0.16]}>
+          <cylinderGeometry args={[0.12, 0.12, 0.18, compact ? 8 : 12]} />
+          <meshStandardMaterial
+            color="#f59e0b"
+            emissive="#f59e0b"
+            emissiveIntensity={2.6}
+          />
+        </mesh>
       )}
 
       <mesh position={[-0.34, mastHeight / 2, -0.88]} castShadow>
