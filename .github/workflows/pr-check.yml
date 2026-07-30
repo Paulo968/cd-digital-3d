@@ -1,10 +1,11 @@
-name: Pull request checks
+name: Code checks
 
 on:
   pull_request:
     branches: [main]
   push:
     branches:
+      - main
       - 'feat/**'
       - 'fix/**'
 
@@ -12,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-check-${{ github.ref }}
+  group: code-check-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
