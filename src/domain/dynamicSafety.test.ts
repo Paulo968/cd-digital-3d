@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { probeDynamicSafety, stoppingDistance } from './dynamicSafety'
+import {
+  probeDynamicSafety,
+  stoppingDistance,
+  sweptCircleTimeOfImpact,
+} from './dynamicSafety'
 
 const baseInput = {
   vehicleId: 'EMP-01',
@@ -19,6 +23,16 @@ describe('dynamicSafety', () => {
     )
   })
 
+  it('calcula o primeiro contato entre volumes circulares em movimento', () => {
+    const time = sweptCircleTimeOfImpact(
+      { x: 0, z: 5 },
+      { x: 0, z: -2 },
+      1,
+    )
+
+    expect(time).toBeCloseTo(2, 5)
+  })
+
   it('aciona emergência para uma pessoa diretamente à frente', () => {
     const result = probeDynamicSafety({
       ...baseInput,
@@ -36,6 +50,7 @@ describe('dynamicSafety', () => {
     expect(result.emergency).toBe(true)
     expect(result.hazardId).toBe('person-1')
     expect(result.safeSpeed).toBeLessThan(baseInput.speed)
+    expect(result.timeToCollision).toBeLessThan(Number.POSITIVE_INFINITY)
   })
 
   it('ignora obstáculo fora da faixa lateral do veículo', () => {
@@ -65,6 +80,46 @@ describe('dynamicSafety', () => {
           kind: 'vehicle',
           point: { x: 0, y: 0.2, z: -3 },
           radius: 0.8,
+          active: true,
+        },
+      ],
+    })
+
+    expect(result.hazardId).toBeNull()
+  })
+
+  it('prevê a entrada lateral de outro veículo na trajetória', () => {
+    const result = probeDynamicSafety({
+      ...baseInput,
+      speed: 2,
+      predictionHorizon: 4,
+      hazards: [
+        {
+          id: 'EMP-CROSS',
+          kind: 'vehicle',
+          point: { x: 4, y: 0.2, z: 4 },
+          radius: 0.8,
+          active: true,
+          velocity: { x: -2, z: 0 },
+        },
+      ],
+    })
+
+    expect(result.hazardId).toBe('EMP-CROSS')
+    expect(result.timeToCollision).toBeLessThan(4)
+    expect(result.safeSpeed).toBeLessThan(Number.POSITIVE_INFINITY)
+  })
+
+  it('permite ignorar o pallet-alvo durante o encaixe dos garfos', () => {
+    const result = probeDynamicSafety({
+      ...baseInput,
+      ignoredHazardIds: ['floor-pallet:PAL-01'],
+      hazards: [
+        {
+          id: 'floor-pallet:PAL-01',
+          kind: 'obstacle',
+          point: { x: 0, y: 0.2, z: 1.5 },
+          radius: 0.68,
           active: true,
         },
       ],
