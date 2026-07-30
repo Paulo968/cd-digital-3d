@@ -5,6 +5,10 @@ import type {
 } from './realisticFleet'
 import { buildTrafficCells, trafficCellsConflict } from './realisticFleet'
 import { buildTravelPath, type WorldPoint } from './routePlanning'
+import {
+  assignOperationMission,
+  operationVehicleIsAvailable,
+} from '../store/operationsControlStore'
 
 export type FleetLanePreference = 'left' | 'right'
 
@@ -15,6 +19,14 @@ export interface DispatchContext {
   activeMissions: FleetMission[]
   reservedMissionIds: Set<string>
   reservedDestinationIds: Set<string>
+}
+
+interface ScoredMission {
+  mission: FleetMission
+  score: number
+  emptyTravel: number
+  congestion: number
+  rolePenalty: number
 }
 
 function distance(left: WorldPoint, right: WorldPoint): number {
@@ -42,9 +54,25 @@ function overlapCount(left: Iterable<string>, right: Set<string>): number {
   return count
 }
 
+function decisionReason(
+  vehicle: FleetVehicleDefinition,
+  selected: ScoredMission,
+): string {
+  const lane = vehicleLanePreference(vehicle.id) === 'left' ? 'esquerda' : 'direita'
+  const congestionText =
+    selected.congestion === 0
+      ? 'rota sem conflito relevante'
+      : `${selected.congestion} células compartilhadas fora dos pontos críticos`
+  return `${vehicle.label}: compatível com ${selected.mission.role}, ${selected.emptyTravel.toFixed(
+    1,
+  )} m até a origem, preferência pela cabeceira ${lane} e ${congestionText}.`
+}
+
 export function chooseBrainMissionForVehicle(
   context: DispatchContext,
 ): FleetMission | undefined {
+  if (!operationVehicleIsAvailable(context.vehicle.id)) return undefined
+
   const activeTraffic = new Set(
     context.activeMissions.flatMap((mission) => mission.trafficCells),
   )
@@ -52,7 +80,7 @@ export function chooseBrainMissionForVehicle(
     context.activeMissions.flatMap((mission) => [...criticalCells(mission)]),
   )
 
-  return context.availableMissions
+  const selected = context.availableMissions
     .filter(
       (mission) =>
         !context.reservedMissionIds.has(mission.id) &&
@@ -61,7 +89,7 @@ export function chooseBrainMissionForVehicle(
         context.vehicle.roles.includes(mission.role) &&
         !trafficCellsConflict(criticalCells(mission), activeCritical),
     )
-    .map((mission) => {
+    .map((mission): ScoredMission => {
       const emptyTravel = distance(context.vehiclePoint, mission.source.access)
       const congestion = overlapCount(mission.trafficCells, activeTraffic)
       const rolePenalty = context.vehicle.roles.indexOf(mission.role) * 4
@@ -71,9 +99,22 @@ export function chooseBrainMissionForVehicle(
         congestion * 45 +
         rolePenalty +
         mission.sequence * 0.001
-      return { mission, score }
+      return { mission, score, emptyTravel, congestion, rolePenalty }
     })
-    .sort((left, right) => left.score - right.score)[0]?.mission
+    .sort((left, right) => left.score - right.score)[0]
+
+  if (!selected) return undefined
+
+  assignOperationMission(
+    {
+      id: context.vehicle.id,
+      label: context.vehicle.label,
+      kind: context.vehicle.kind,
+    },
+    selected.mission.id,
+    decisionReason(context.vehicle, selected),
+  )
+  return selected.mission
 }
 
 function pathDistance(points: WorldPoint[]): number {
@@ -121,7 +162,9 @@ export function buildAdaptiveFleetPath(
     .map((lane, index) => {
       const points = candidatePath(layout, from, to, lane)
       if (!points) return undefined
-      const key = points.map((point) => `${point.x.toFixed(2)}:${point.z.toFixed(2)}`).join('|')
+      const key = points
+        .map((point) => `${point.x.toFixed(2)}:${point.z.toFixed(2)}`)
+        .join('|')
       if (seen.has(key)) return undefined
       seen.add(key)
       const cells = buildTrafficCells(points)
