@@ -1,6 +1,8 @@
-import type {
-  DynamicHazard,
-  PlanarVelocity,
+import {
+  forgetTrafficFlowVehicle,
+  resetTrafficFlowMemory,
+  type DynamicHazard,
+  type PlanarVelocity,
 } from '../domain/dynamicSafety'
 import type { WorldPoint } from '../domain/routePlanning'
 import {
@@ -46,9 +48,20 @@ function measuredVelocity(
     return { x: 0, z: 0 }
   }
 
-  const seconds = Math.max(0.008, (now - previous.updatedAt) / 1000)
-  let x = (next.point.x - previous.point.x) / seconds
-  let z = (next.point.z - previous.point.z) / seconds
+  const elapsedMilliseconds = now - previous.updatedAt
+  const deltaX = next.point.x - previous.point.x
+  const deltaZ = next.point.z - previous.point.z
+
+  // Alguns componentes publicam o estado antes e depois do movimento no mesmo
+  // quadro. Uma leitura duplicada sem deslocamento não pode apagar a direção
+  // que os demais sensores ainda precisam enxergar.
+  if (elapsedMilliseconds <= 4 && Math.hypot(deltaX, deltaZ) <= 0.0005) {
+    return previous.velocity ?? { x: 0, z: 0 }
+  }
+
+  const seconds = Math.max(0.008, elapsedMilliseconds / 1000)
+  let x = deltaX / seconds
+  let z = deltaZ / seconds
   const magnitude = Math.hypot(x, z)
   const limit = Math.max(1.2, next.speed * 1.65, 7)
   if (magnitude > limit) {
@@ -65,6 +78,14 @@ function measuredVelocity(
 }
 
 function syncVehicleHazard(state: RuntimeVehicleState): void {
+  const previousFacing = hazards.get(state.id)?.facing
+  const velocity = state.velocity ?? { x: 0, z: 0 }
+  const velocityMagnitude = Math.hypot(velocity.x, velocity.z)
+  const facing =
+    velocityMagnitude > 0.05
+      ? Math.atan2(velocity.x, velocity.z)
+      : previousFacing
+
   hazards.set(state.id, {
     id: state.id,
     kind: 'vehicle',
@@ -74,6 +95,7 @@ function syncVehicleHazard(state: RuntimeVehicleState): void {
     // malha dinâmica até existir um gerenciador de estacionamento dedicado.
     active: state.active || faultedVehicles.has(state.id),
     velocity: state.velocity,
+    facing,
   })
 }
 
@@ -93,6 +115,7 @@ export function removeRuntimeVehicle(vehicleId: string): void {
   faultedVehicles.delete(vehicleId)
   telemetryPublishedAt.delete(vehicleId)
   telemetryActiveState.delete(vehicleId)
+  forgetTrafficFlowVehicle(vehicleId)
 }
 
 export function readRuntimeVehicleState(
@@ -142,4 +165,5 @@ export function resetDynamicSafetyRuntime(): void {
   faultedVehicles.clear()
   telemetryPublishedAt.clear()
   telemetryActiveState.clear()
+  resetTrafficFlowMemory()
 }
