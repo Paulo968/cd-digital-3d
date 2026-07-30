@@ -242,7 +242,9 @@ function FloorSupports({ stops }: { stops: RealisticMissionStop[] }) {
               <boxGeometry args={[1.9, supportHeight, 1.35]} />
               <meshStandardMaterial color="#475569" metalness={0.18} roughness={0.82} />
             </mesh>
-            {!stop.id.startsWith('receiving:') && !stop.id.startsWith('shipping-buffer:') ? null : (
+            {!stop.id.startsWith('receiving:') &&
+            !stop.id.startsWith('shipping-buffer:') &&
+            !stop.id.startsWith('outbound-buffer:') ? null : (
               <Text
                 position={[stop.restingPoint.x, 0.07, stop.restingPoint.z + 0.82]}
                 rotation={[-Math.PI / 2, 0, 0]}
@@ -343,15 +345,18 @@ function WarehouseShell({
 export function RealisticEnvironment({
   layout,
   locations,
-  animated,
   compact,
 }: RealisticEnvironmentProps) {
   const geometry = useMemo(() => getEnvironmentGeometry(layout), [layout])
+
+  // O modo compacto reduz detalhes visuais, mas não pode apagar papéis do fluxo.
+  // A operação realista também não depende de rota manual, transferência salva ou
+  // preferência de movimento reduzido do aparelho: essas opções não devem congelar o CD.
   const plan = useMemo(
-    () => buildIndustrialFlowPlan(layout, locations, geometry, compact),
-    [compact, geometry, layout, locations],
+    () => buildIndustrialFlowPlan(layout, locations, geometry, false),
+    [geometry, layout, locations],
   )
-  const automaticOperationVisible = animated && plan.missions.length > 0
+  const automaticOperationVisible = plan.missions.length > 0
 
   return (
     <group>
@@ -360,6 +365,7 @@ export function RealisticEnvironment({
         stops={[
           ...plan.dischargeStops,
           ...plan.aisleBufferStops,
+          ...plan.outboundAisleBufferStops,
           ...plan.shippingBufferStops,
         ]}
       />
