@@ -4,6 +4,7 @@ import {
   DESKTOP_PANEL_BOUNDS,
   clampPanelPosition,
   panelPresetPosition,
+  panelSizeIsUsable,
 } from './operationsPanelPosition'
 
 const desktopViewport = { width: 1440, height: 900 }
@@ -52,5 +53,11 @@ describe('operationsPanelPosition', () => {
         COMPACT_PANEL_BOUNDS,
       ),
     ).toEqual({ x: 8, y: 262 })
+  })
+
+  it('aguarda a medida real antes de salvar a posição', () => {
+    expect(panelSizeIsUsable({ width: 0, height: 0 })).toBe(false)
+    expect(panelSizeIsUsable({ width: 390, height: 0 })).toBe(false)
+    expect(panelSizeIsUsable({ width: 390, height: 48 })).toBe(true)
   })
 })
