@@ -320,12 +320,21 @@ export function RealisticEnvironment({
     () => buildRealisticFleetPlan(layout, locations, geometry, compact),
     [compact, geometry, layout, locations],
   )
+  const automaticOperationVisible = animated && plan.missions.length > 0
 
   return (
     <group>
       <WarehouseShell layout={layout} geometry={geometry} compact={compact} />
       <FloorSupports stops={[...plan.receivingStops, ...plan.stagingStops]} />
-      {animated && plan.missions.length > 0 && (
+      {!automaticOperationVisible && (
+        <StaticTruck
+          x={geometry.shippingX}
+          z={geometry.frontZ + 5.1}
+          accent="#0284c7"
+          compact={compact}
+        />
+      )}
+      {automaticOperationVisible && (
         <>
           <FleetOperation
             layout={layout}
