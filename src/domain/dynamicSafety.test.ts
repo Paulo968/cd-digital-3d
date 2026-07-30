@@ -151,4 +151,32 @@ describe('dynamicSafety', () => {
 
     expect(result.hazardId).toBe('near')
   })
+
+  it('dá passagem a apenas um veículo quando dois agentes começam sobrepostos', () => {
+    const hazard = {
+      id: 'EMP-02',
+      kind: 'vehicle' as const,
+      point: { x: 0, y: 0.2, z: 0.15 },
+      radius: 0.8,
+      active: true,
+      velocity: { x: 0, z: 0 },
+    }
+
+    const first = probeDynamicSafety({
+      ...baseInput,
+      vehicleId: 'EMP-01',
+      speed: 0,
+      hazards: [hazard],
+    })
+    const second = probeDynamicSafety({
+      ...baseInput,
+      vehicleId: 'EMP-02',
+      speed: 0,
+      hazards: [{ ...hazard, id: 'EMP-01' }],
+    })
+
+    expect(first.hazardId).toBeNull()
+    expect(second.hazardId).toBe('EMP-01')
+    expect(second.safeSpeed).toBe(0)
+  })
 })
