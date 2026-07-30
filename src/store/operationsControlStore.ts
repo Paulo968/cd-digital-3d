@@ -44,17 +44,15 @@ interface OperationsControlState {
   resetSession: () => void
 }
 
-interface MutableOperationState {
+interface MetricSource {
   pallets: Record<string, OperationPalletRecord>
   orders: OperationOrderRecord[]
   missions: OperationMissionRecord[]
   vehicles: Record<string, OperationVehicleRecord>
-  events: OperationEventRecord[]
   metrics: OperationMetrics
-  truck: TruckCycleState
 }
 
-function nowEventId(prefix: string, at: number): string {
+function eventId(prefix: string, at: number): string {
   return `${prefix}-${at}-${Math.random().toString(36).slice(2, 7)}`
 }
 
@@ -62,13 +60,16 @@ function appendEvent(
   events: OperationEventRecord[],
   event: Omit<OperationEventRecord, 'id'>,
 ): OperationEventRecord[] {
-  return [
-    { ...event, id: nowEventId(event.kind, event.at) },
-    ...events,
-  ].slice(0, MAX_EVENTS)
+  return [{ ...event, id: eventId(event.kind, event.at) }, ...events].slice(
+    0,
+    MAX_EVENTS,
+  )
 }
 
-function inferZone(stopId: string, label: string): OperationPalletRecord['zone'] {
+function inferZone(
+  stopId: string,
+  label: string,
+): OperationPalletRecord['zone'] {
   const normalized = `${stopId} ${label}`.toLocaleLowerCase('pt-BR')
   if (normalized.includes('receiving:') || normalized.includes('recebimento')) {
     return 'receiving'
@@ -80,32 +81,34 @@ function inferZone(stopId: string, label: string): OperationPalletRecord['zone']
     return 'truck'
   }
   if (normalized.includes('picking')) return 'picking'
-  if (normalized.includes('address:') || normalized.includes('reserva')) return 'reserve'
+  if (normalized.includes('address:') || normalized.includes('reserva')) {
+    return 'reserve'
+  }
   return 'transit'
 }
 
-function recalculateMetrics(state: MutableOperationState): OperationMetrics {
-  const metrics = { ...state.metrics }
+function recalculateMetrics(source: MetricSource): OperationMetrics {
+  const metrics = { ...source.metrics }
   metrics.reserveUnits = 0
   metrics.pickingUnits = 0
   metrics.truckUnits = 0
 
-  Object.values(state.pallets).forEach((pallet) => {
+  Object.values(source.pallets).forEach((pallet) => {
     if (pallet.zone === 'reserve') metrics.reserveUnits += pallet.units
     if (pallet.zone === 'picking') metrics.pickingUnits += pallet.units
     if (pallet.zone === 'truck') metrics.truckUnits += pallet.units
   })
 
-  metrics.openOrders = state.orders.filter(
+  metrics.openOrders = source.orders.filter(
     (order) => order.status !== 'shipped',
   ).length
-  metrics.activeMissions = state.missions.filter(
+  metrics.activeMissions = source.missions.filter(
     (mission) => mission.status === 'running' || mission.status === 'waiting',
   ).length
-  metrics.idleVehicles = Object.values(state.vehicles).filter(
+  metrics.idleVehicles = Object.values(source.vehicles).filter(
     (vehicle) => vehicle.status === 'idle',
   ).length
-  metrics.workingVehicles = Object.values(state.vehicles).filter(
+  metrics.workingVehicles = Object.values(source.vehicles).filter(
     (vehicle) =>
       vehicle.status === 'working' ||
       vehicle.status === 'braking' ||
@@ -194,18 +197,23 @@ export function registerOperationVehicle(
 ): void {
   useOperationsControlStore.setState((state) => {
     if (state.vehicles[input.id]) return state
-    const vehicles = {
+    const status: OperationVehicleStatus = operationVehicleIsAvailable(input.id)
+      ? 'idle'
+      : 'unavailable'
+    const vehicles: Record<string, OperationVehicleRecord> = {
       ...state.vehicles,
       [input.id]: {
         ...input,
-        status: operationVehicleIsAvailable(input.id) ? 'idle' : 'unavailable',
+        status,
         speed: 0,
         lastUpdatedAt: at,
         startedCurrentMission: false,
       },
     }
-    const mutable = { ...state, vehicles } as MutableOperationState
-    return { vehicles, metrics: recalculateMetrics(mutable) }
+    return {
+      vehicles,
+      metrics: recalculateMetrics({ ...state, vehicles }),
+    }
   })
 }
 
@@ -220,7 +228,7 @@ export function recordPalletReceived(
 
   useOperationsControlStore.setState((state) => {
     if (state.pallets[palletId]) return state
-    const pallets = {
+    const pallets: Record<string, OperationPalletRecord> = {
       ...state.pallets,
       [palletId]: {
         id: palletId,
@@ -235,14 +243,13 @@ export function recordPalletReceived(
         updatedAt: at,
       },
     }
-    const metrics = {
+    const baseMetrics = {
       ...state.metrics,
       receivedPallets: state.metrics.receivedPallets + 1,
     }
-    const mutable = { ...state, pallets, metrics } as MutableOperationState
     return {
       pallets,
-      metrics: recalculateMetrics(mutable),
+      metrics: recalculateMetrics({ ...state, pallets, metrics: baseMetrics }),
       events: appendEvent(state.events, {
         at,
         kind: 'receive',
@@ -281,19 +288,20 @@ export function recordOperationOrder(
 
   useOperationsControlStore.setState((current) => {
     if (current.orders.some((order) => order.id === orderId)) return current
-    const orders: OperationOrderRecord[] = [
-      {
-        id: orderId,
-        palletId,
-        sku: product.sku,
-        quantity,
-        status: 'waiting',
-        createdAt: at,
-        updatedAt: at,
-      },
-      ...current.orders,
-    ].slice(0, MAX_ORDERS)
-    const pallets = current.pallets[palletId]
+    const newOrder: OperationOrderRecord = {
+      id: orderId,
+      palletId,
+      sku: product.sku,
+      quantity,
+      status: 'waiting',
+      createdAt: at,
+      updatedAt: at,
+    }
+    const orders: OperationOrderRecord[] = [newOrder, ...current.orders].slice(
+      0,
+      MAX_ORDERS,
+    )
+    const pallets: Record<string, OperationPalletRecord> = current.pallets[palletId]
       ? {
           ...current.pallets,
           [palletId]: {
@@ -303,15 +311,19 @@ export function recordOperationOrder(
           },
         }
       : current.pallets
-    const metrics = {
+    const baseMetrics = {
       ...current.metrics,
       ordersCreated: current.metrics.ordersCreated + 1,
     }
-    const mutable = { ...current, orders, pallets, metrics } as MutableOperationState
     return {
       orders,
       pallets,
-      metrics: recalculateMetrics(mutable),
+      metrics: recalculateMetrics({
+        ...current,
+        orders,
+        pallets,
+        metrics: baseMetrics,
+      }),
       events: appendEvent(current.events, {
         at,
         kind: 'order',
@@ -336,9 +348,9 @@ export function recordOperationMission(
   },
   at = Date.now(),
 ): void {
+  ensureOperationPallet(input.palletId, input.sourceId, input.sourceLabel, at)
   useOperationsControlStore.setState((state) => {
     if (state.missions.some((mission) => mission.id === input.id)) return state
-    ensureOperationPallet(input.palletId, input.sourceId, input.sourceLabel, at)
     const mission: OperationMissionRecord = {
       id: input.id,
       palletId: input.palletId,
@@ -370,41 +382,42 @@ export function assignOperationMission(
   useOperationsControlStore.setState((state) => {
     const mission = state.missions.find((item) => item.id === missionId)
     if (!mission || mission.status === 'running') return state
-    const missions = state.missions.map((item) =>
+    const missions: OperationMissionRecord[] = state.missions.map((item) =>
       item.id === missionId
         ? {
             ...item,
-            status: 'running' as const,
+            status: 'running',
             vehicleId: vehicle.id,
             decisionReason: reason,
             startedAt: at,
           }
         : item,
     )
-    const orders = state.orders.map((order) =>
+    const orders: OperationOrderRecord[] = state.orders.map((order) =>
       order.palletId === mission.palletId && order.status === 'waiting'
-        ? { ...order, status: 'assigned' as const, updatedAt: at }
+        ? { ...order, status: 'assigned', updatedAt: at }
         : order,
     )
-    const vehicles = {
+    const existing = state.vehicles[vehicle.id]
+    const vehicles: Record<string, OperationVehicleRecord> = {
       ...state.vehicles,
       [vehicle.id]: {
-        ...state.vehicles[vehicle.id],
+        id: vehicle.id,
         label: vehicle.label,
         kind: vehicle.kind,
-        status: 'working' as const,
+        status: 'working',
+        speed: existing?.speed ?? 0,
         currentMissionId: missionId,
         decisionReason: reason,
         lastUpdatedAt: at,
         startedCurrentMission: false,
       },
     }
-    const mutable = { ...state, missions, vehicles, orders } as MutableOperationState
     return {
       missions,
       vehicles,
       orders,
-      metrics: recalculateMetrics(mutable),
+      metrics: recalculateMetrics({ ...state, missions, vehicles, orders }),
       events: appendEvent(state.events, {
         at,
         kind: 'vehicle',
@@ -435,20 +448,18 @@ export function publishOperationVehicleRuntime(
   useOperationsControlStore.setState((current) => {
     const vehicle = current.vehicles[vehicleId]
     if (!vehicle) return current
-
     if (vehicle.currentMissionId && vehicle.startedCurrentMission && !active) {
       return completeMissionState(current, vehicleId, at)
     }
 
-    const unavailable = !operationVehicleIsAvailable(vehicleId)
-    const status: OperationVehicleStatus = unavailable
+    const status: OperationVehicleStatus = !operationVehicleIsAvailable(vehicleId)
       ? 'unavailable'
       : active
         ? vehicle.status === 'fault'
           ? 'fault'
           : 'working'
         : 'idle'
-    const vehicles = {
+    const vehicles: Record<string, OperationVehicleRecord> = {
       ...current.vehicles,
       [vehicleId]: {
         ...vehicle,
@@ -458,8 +469,10 @@ export function publishOperationVehicleRuntime(
         lastUpdatedAt: at,
       },
     }
-    const mutable = { ...current, vehicles } as MutableOperationState
-    return { vehicles, metrics: recalculateMetrics(mutable) }
+    return {
+      vehicles,
+      metrics: recalculateMetrics({ ...current, vehicles }),
+    }
   })
 }
 
@@ -473,14 +486,14 @@ function completeMissionState(
   const mission = state.missions.find((item) => item.id === missionId)
   if (!vehicle || !mission) return state
 
-  const missions = state.missions.map((item) =>
+  const missions: OperationMissionRecord[] = state.missions.map((item) =>
     item.id === mission.id
-      ? { ...item, status: 'completed' as const, completedAt: at }
+      ? { ...item, status: 'completed', completedAt: at }
       : item,
   )
   const pallet = state.pallets[mission.palletId]
   const destinationZone = inferZone('', mission.destinationLabel)
-  const pallets = pallet
+  const pallets: Record<string, OperationPalletRecord> = pallet
     ? {
         ...state.pallets,
         [mission.palletId]: {
@@ -491,18 +504,16 @@ function completeMissionState(
         },
       }
     : state.pallets
-  const orders = state.orders.map((order) =>
+  const orders: OperationOrderRecord[] = state.orders.map((order) =>
     order.palletId === mission.palletId && destinationZone === 'truck'
-      ? { ...order, status: 'loading' as const, updatedAt: at }
+      ? { ...order, status: 'loading', updatedAt: at }
       : order,
   )
-  const vehicles = {
+  const vehicles: Record<string, OperationVehicleRecord> = {
     ...state.vehicles,
     [vehicleId]: {
       ...vehicle,
-      status: operationVehicleIsAvailable(vehicleId)
-        ? ('idle' as const)
-        : ('unavailable' as const),
+      status: operationVehicleIsAvailable(vehicleId) ? 'idle' : 'unavailable',
       speed: 0,
       currentMissionId: undefined,
       decisionReason: undefined,
@@ -510,7 +521,7 @@ function completeMissionState(
       lastUpdatedAt: at,
     },
   }
-  const metrics = {
+  const baseMetrics = {
     ...state.metrics,
     missionsCompleted: state.metrics.missionsCompleted + 1,
     storedPallets:
@@ -518,20 +529,19 @@ function completeMissionState(
         ? state.metrics.storedPallets + 1
         : state.metrics.storedPallets,
   }
-  const mutable = {
-    ...state,
-    missions,
-    pallets,
-    orders,
-    vehicles,
-    metrics,
-  } as MutableOperationState
   return {
     missions,
     pallets,
     orders,
     vehicles,
-    metrics: recalculateMetrics(mutable),
+    metrics: recalculateMetrics({
+      ...state,
+      missions,
+      pallets,
+      orders,
+      vehicles,
+      metrics: baseMetrics,
+    }),
     events: appendEvent(state.events, {
       at,
       kind: 'mission',
@@ -549,21 +559,24 @@ export function setOperationVehicleFault(
   useOperationsControlStore.setState((state) => {
     const vehicle = state.vehicles[vehicleId]
     if (!vehicle) return state
-    const vehicles = {
+    const vehicles: Record<string, OperationVehicleRecord> = {
       ...state.vehicles,
       [vehicleId]: {
         ...vehicle,
-        status: faulted ? ('fault' as const) : ('working' as const),
+        status: faulted ? 'fault' : 'working',
         lastUpdatedAt: at,
       },
     }
-    const metrics = faulted
+    const baseMetrics = faulted
       ? { ...state.metrics, vehicleFaults: state.metrics.vehicleFaults + 1 }
       : state.metrics
-    const mutable = { ...state, vehicles, metrics } as MutableOperationState
     return {
       vehicles,
-      metrics: recalculateMetrics(mutable),
+      metrics: recalculateMetrics({
+        ...state,
+        vehicles,
+        metrics: baseMetrics,
+      }),
       events: faulted
         ? appendEvent(state.events, {
             at,
@@ -600,43 +613,54 @@ export function recordTruckDeparture(
   at = Date.now(),
 ): void {
   useOperationsControlStore.setState((state) => {
-    const departing = palletIds
-      .map((palletId) => state.pallets[palletId])
-      .filter((pallet): pallet is OperationPalletRecord => Boolean(pallet))
-    const loadedUnits = departing.reduce((total, pallet) => total + pallet.units, 0)
     const departedSet = new Set(palletIds)
+    const loadedUnits = state.orders
+      .filter(
+        (order) =>
+          departedSet.has(order.palletId) && order.status !== 'shipped',
+      )
+      .reduce((total, order) => total + order.quantity, 0)
+    const fallbackUnits = palletIds.reduce(
+      (total, palletId) => total + (state.pallets[palletId]?.units ?? 0),
+      0,
+    )
+    const shippedUnits = loadedUnits > 0 ? loadedUnits : fallbackUnits
     const pallets = { ...state.pallets }
     palletIds.forEach((palletId) => delete pallets[palletId])
-    const orders = state.orders.map((order) =>
+    const orders: OperationOrderRecord[] = state.orders.map((order) =>
       departedSet.has(order.palletId)
-        ? { ...order, status: 'shipped' as const, updatedAt: at }
+        ? { ...order, status: 'shipped', updatedAt: at }
         : order,
     )
-    const metrics = {
+    const baseMetrics = {
       ...state.metrics,
       shippedPallets: state.metrics.shippedPallets + palletIds.length,
-      shippedUnits: state.metrics.shippedUnits + loadedUnits,
+      shippedUnits: state.metrics.shippedUnits + shippedUnits,
     }
-    const queueBase = currentScenarioProfile().id === 'outbound-surge' ? 3 : 1
+    const queue = currentScenarioProfile().id === 'outbound-surge' ? 3 : 1
     const truck: TruckCycleState = {
       ...state.truck,
       phase: 'closing',
       loadPalletIds: palletIds,
-      loadedUnits,
-      queue: queueBase,
+      loadedUnits: shippedUnits,
+      queue,
       changedAt: at,
     }
-    const mutable = { ...state, pallets, orders, metrics, truck } as MutableOperationState
     return {
       pallets,
       orders,
       truck,
-      metrics: recalculateMetrics(mutable),
+      metrics: recalculateMetrics({
+        ...state,
+        pallets,
+        orders,
+        metrics: baseMetrics,
+      }),
       events: appendEvent(state.events, {
         at,
         kind: 'truck',
         title: `Caminhão ${state.truck.cycle} liberado`,
-        detail: `${palletIds.length} pallets e ${loadedUnits} unidades preparados para saída.`,
+        detail: `${palletIds.length} pallets e ${shippedUnits} unidades preparados para saída.`,
       }),
     }
   })
@@ -663,21 +687,23 @@ export function completeTruckCycle(at = Date.now()): void {
 
 export function syncUnavailableVehicles(at = Date.now()): void {
   useOperationsControlStore.setState((state) => {
-    const vehicles = Object.fromEntries(
+    const vehicles: Record<string, OperationVehicleRecord> = Object.fromEntries(
       Object.entries(state.vehicles).map(([id, vehicle]) => [
         id,
         {
           ...vehicle,
           status: operationVehicleIsAvailable(id)
             ? vehicle.status === 'unavailable'
-              ? ('idle' as const)
+              ? 'idle'
               : vehicle.status
-            : ('unavailable' as const),
+            : 'unavailable',
           lastUpdatedAt: at,
         },
       ]),
     )
-    const mutable = { ...state, vehicles } as MutableOperationState
-    return { vehicles, metrics: recalculateMetrics(mutable) }
+    return {
+      vehicles,
+      metrics: recalculateMetrics({ ...state, vehicles }),
+    }
   })
 }
