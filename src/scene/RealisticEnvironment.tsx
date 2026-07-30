@@ -1,3 +1,4 @@
+import { Html } from '@react-three/drei'
 import { useMemo } from 'react'
 import * as THREE from 'three'
 import type { WarehouseLayout } from '../domain/layout'
@@ -11,7 +12,9 @@ import {
   PALLET_SUPPORT_CLEARANCE,
 } from '../domain/warehouseGeometry'
 import type { WarehouseLocation } from '../domain/warehouse'
+import { OperationsControlPanel } from '../features/OperationsControlPanel'
 import { FleetOperation } from './FleetOperation'
+import { LiveTruck } from './LiveTruck'
 import { SafetyScenarioActors } from './SafetyScenarioActors'
 
 interface LayoutBounds {
@@ -139,7 +142,7 @@ function DockPortal({ x, frontZ }: { x: number; frontZ: number }) {
   )
 }
 
-function Truck({
+function StaticTruck({
   x,
   z,
   accent,
@@ -289,14 +292,8 @@ function WarehouseShell({
 
       <DockPortal x={geometry.receivingX} frontZ={frontZ} />
       <DockPortal x={geometry.shippingX} frontZ={frontZ} />
-      <Truck
-        x={geometry.shippingX}
-        z={frontZ + 5.1}
-        accent="#0284c7"
-        compact={compact}
-      />
       {!compact && (
-        <Truck
+        <StaticTruck
           x={geometry.receivingX}
           z={frontZ + 5.1}
           accent="#16a34a"
@@ -323,17 +320,31 @@ export function RealisticEnvironment({
     () => buildRealisticFleetPlan(layout, locations, geometry, compact),
     [compact, geometry, layout, locations],
   )
+  const automaticOperationVisible = animated && plan.missions.length > 0
 
   return (
     <group>
       <WarehouseShell layout={layout} geometry={geometry} compact={compact} />
       <FloorSupports stops={[...plan.receivingStops, ...plan.stagingStops]} />
-      {animated && plan.missions.length > 0 && (
+      {!automaticOperationVisible && (
+        <StaticTruck
+          x={geometry.shippingX}
+          z={geometry.frontZ + 5.1}
+          accent="#0284c7"
+          compact={compact}
+        />
+      )}
+      {automaticOperationVisible && (
         <>
           <FleetOperation
             layout={layout}
             locations={locations}
             plan={plan}
+            compact={compact}
+          />
+          <LiveTruck
+            x={geometry.shippingX}
+            dockZ={geometry.frontZ + 5.1}
             compact={compact}
           />
           <SafetyScenarioActors
@@ -343,6 +354,11 @@ export function RealisticEnvironment({
             frontZ={geometry.frontZ}
             compact={compact}
           />
+          <Html fullscreen zIndexRange={[40, 20]} style={{ pointerEvents: 'none' }}>
+            <div style={{ pointerEvents: 'auto' }}>
+              <OperationsControlPanel />
+            </div>
+          </Html>
         </>
       )}
     </group>

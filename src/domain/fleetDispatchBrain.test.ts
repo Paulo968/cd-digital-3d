@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
 import {
   buildAdaptiveFleetPath,
   chooseBrainMissionForVehicle,
@@ -10,6 +10,7 @@ import {
   type FleetMission,
 } from './realisticFleet'
 import { generateWarehouseSkeleton } from './warehouse'
+import { useOperationsControlStore } from '../store/operationsControlStore'
 
 const layout = DEFAULT_WAREHOUSE_LAYOUT
 const locations = generateWarehouseSkeleton(layout)
@@ -25,6 +26,10 @@ function compatibleMissions(): FleetMission[] {
 }
 
 describe('fleetDispatchBrain', () => {
+  beforeEach(() => {
+    useOperationsControlStore.getState().resetSession()
+  })
+
   it('distribui lados diferentes para veículos pares e ímpares', () => {
     expect(vehicleLanePreference('EMP-01')).toBe('left')
     expect(vehicleLanePreference('EMP-02')).toBe('right')
@@ -49,6 +54,9 @@ describe('fleetDispatchBrain', () => {
     })
 
     expect(selected?.id).toBe(candidates[1].id)
+    const operation = useOperationsControlStore.getState()
+    expect(operation.pallets[candidates[1].palletId]).toBeDefined()
+    expect(operation.metrics.receivedPallets).toBe(0)
   })
 
   it('não despacha duas missões para o mesmo ponto crítico', () => {
@@ -68,6 +76,25 @@ describe('fleetDispatchBrain', () => {
       availableMissions: [candidate],
       activeMissions: [active],
       reservedMissionIds: new Set([active.id]),
+      reservedDestinationIds: new Set(),
+    })
+
+    expect(selected).toBeUndefined()
+  })
+
+  it('mantém a expedição na fila enquanto o caminhão está fora da doca', () => {
+    const vehicle = plan.vehicles.find((item) => item.id === 'EMP-01')!
+    const shipping = compatibleMissions().find(
+      (mission) => mission.role === 'shipping',
+    )!
+    useOperationsControlStore.getState().setTruckPhase('away')
+
+    const selected = chooseBrainMissionForVehicle({
+      vehicle,
+      vehiclePoint: vehicle.startPoint,
+      availableMissions: [shipping],
+      activeMissions: [],
+      reservedMissionIds: new Set(),
       reservedDestinationIds: new Set(),
     })
 

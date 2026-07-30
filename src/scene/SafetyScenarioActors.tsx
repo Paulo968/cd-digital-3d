@@ -2,6 +2,11 @@ import { useFrame, useThree } from '@react-three/fiber'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import * as THREE from 'three'
 import {
+  currentScenarioProfile,
+  recordSafetyEvent,
+  useOperationsControlStore,
+} from '../store/operationsControlStore'
+import {
   chooseMovingVehicleForFault,
   removeRuntimeHazard,
   setRuntimeVehicleFault,
@@ -77,11 +82,16 @@ export function SafetyScenarioActors({
 }: SafetyScenarioActorsProps) {
   const pedestrianRef = useRef<THREE.Group | null>(null)
   const pedestrianProgressRef = useRef(0)
+  const pedestrianActiveRef = useRef(false)
+  const obstacleActiveRef = useRef(false)
   const activeFaultRef = useRef<string | null>(null)
   const timeoutIdsRef = useRef<number[]>([])
   const intervalIdsRef = useRef<number[]>([])
+  const manualTokensRef = useRef({ pedestrian: 0, obstacle: 0, failure: 0 })
   const [pedestrianActive, setPedestrianActive] = useState(false)
   const [obstacleActive, setObstacleActive] = useState(false)
+  const scenario = useOperationsControlStore((state) => state.scenario)
+  const safetyTokens = useOperationsControlStore((state) => state.safetyTokens)
   const { invalidate } = useThree()
 
   const pedestrianStartX = Math.min(receivingX, shippingX) - 2.2
@@ -98,28 +108,56 @@ export function SafetyScenarioActors({
     return id
   }, [])
 
+  const clearSchedules = useCallback(() => {
+    timeoutIdsRef.current.forEach((id) => window.clearTimeout(id))
+    intervalIdsRef.current.forEach((id) => window.clearInterval(id))
+    timeoutIdsRef.current = []
+    intervalIdsRef.current = []
+  }, [])
+
   const startPedestrian = useCallback(() => {
+    if (pedestrianActiveRef.current) return
+    pedestrianActiveRef.current = true
     pedestrianProgressRef.current = 0
     setPedestrianActive(true)
+    recordSafetyEvent(
+      'Pedestre no corredor',
+      'Sensores virtuais passam a limitar a velocidade dos veículos na faixa.',
+    )
     invalidate()
   }, [invalidate])
 
-  const startObstacle = useCallback(() => {
-    setObstacleActive(true)
-    upsertRuntimeHazard({
-      id: 'dynamic-obstacle-1',
-      kind: 'obstacle',
-      point: obstaclePoint,
-      radius: 0.72,
-      active: true,
-    })
+  const clearObstacle = useCallback(() => {
+    obstacleActiveRef.current = false
+    setObstacleActive(false)
+    removeRuntimeHazard('dynamic-obstacle-1')
     invalidate()
-    later(() => {
-      setObstacleActive(false)
-      removeRuntimeHazard('dynamic-obstacle-1')
+  }, [invalidate])
+
+  const startObstacle = useCallback(
+    (persistent = false) => {
+      if (obstacleActiveRef.current && persistent) return
+      obstacleActiveRef.current = true
+      setObstacleActive(true)
+      upsertRuntimeHazard({
+        id: 'dynamic-obstacle-1',
+        kind: 'obstacle',
+        point: obstaclePoint,
+        radius: 0.72,
+        active: true,
+      })
+      recordSafetyEvent(
+        persistent ? 'Corredor bloqueado' : 'Obstáculo inesperado',
+        persistent
+          ? 'A barreira permanece ativa até a troca do cenário.'
+          : 'A barreira surgiu depois do despacho e exige frenagem dinâmica.',
+      )
       invalidate()
-    }, compact ? 4200 : 5200)
-  }, [compact, invalidate, later, obstaclePoint])
+      if (persistent) return
+      later(clearObstacle, compact ? 4200 : 5200)
+    },
+    [clearObstacle, compact, invalidate, later, obstaclePoint],
+  )
 
   const startBreakdown = useCallback(() => {
     const vehicleId = chooseMovingVehicleForFault()
@@ -136,32 +174,84 @@ export function SafetyScenarioActors({
   }, [compact, invalidate, later])
 
   useEffect(() => {
+    clearSchedules()
+    clearObstacle()
+    const profile = currentScenarioProfile()
+
     later(startPedestrian, compact ? 6500 : 4200)
-    later(startObstacle, compact ? 12500 : 9000)
-    later(startBreakdown, compact ? 19000 : 14500)
+    if (profile.persistentObstacle) {
+      later(() => startObstacle(true), compact ? 3500 : 2400)
+    } else {
+      later(() => startObstacle(false), compact ? 12500 : 9000)
+    }
+    later(
+      startBreakdown,
+      profile.frequentBreakdown ? 6200 : compact ? 19000 : 14500,
+    )
 
     intervalIdsRef.current.push(
       window.setInterval(startPedestrian, compact ? 26000 : 19000),
-      window.setInterval(startObstacle, compact ? 34000 : 25000),
-      window.setInterval(startBreakdown, compact ? 42000 : 31000),
+    )
+    if (!profile.persistentObstacle) {
+      intervalIdsRef.current.push(
+        window.setInterval(
+          () => startObstacle(false),
+          compact ? 34000 : 25000,
+        ),
+      )
+    }
+    intervalIdsRef.current.push(
+      window.setInterval(
+        startBreakdown,
+        profile.frequentBreakdown
+          ? compact
+            ? 14500
+            : 10500
+          : compact
+            ? 42000
+            : 31000,
+      ),
     )
 
     return () => {
-      timeoutIdsRef.current.forEach((id) => window.clearTimeout(id))
-      intervalIdsRef.current.forEach((id) => window.clearInterval(id))
-      timeoutIdsRef.current = []
-      intervalIdsRef.current = []
+      clearSchedules()
+      pedestrianActiveRef.current = false
+      setPedestrianActive(false)
       removeRuntimeHazard('dynamic-person-1')
-      removeRuntimeHazard('dynamic-obstacle-1')
+      clearObstacle()
       if (activeFaultRef.current) {
         setRuntimeVehicleFault(activeFaultRef.current, false)
         activeFaultRef.current = null
       }
     }
-  }, [compact, later, startBreakdown, startObstacle, startPedestrian])
+  }, [
+    clearObstacle,
+    clearSchedules,
+    compact,
+    later,
+    scenario,
+    startBreakdown,
+    startObstacle,
+    startPedestrian,
+  ])
+
+  useEffect(() => {
+    if (safetyTokens.pedestrian !== manualTokensRef.current.pedestrian) {
+      manualTokensRef.current.pedestrian = safetyTokens.pedestrian
+      startPedestrian()
+    }
+    if (safetyTokens.obstacle !== manualTokensRef.current.obstacle) {
+      manualTokensRef.current.obstacle = safetyTokens.obstacle
+      startObstacle(currentScenarioProfile().persistentObstacle)
+    }
+    if (safetyTokens.failure !== manualTokensRef.current.failure) {
+      manualTokensRef.current.failure = safetyTokens.failure
+      startBreakdown()
+    }
+  }, [safetyTokens, startBreakdown, startObstacle, startPedestrian])
 
   useFrame((_, delta) => {
-    if (!pedestrianActive) return
+    if (!pedestrianActiveRef.current) return
 
     pedestrianProgressRef.current = Math.min(
       1,
@@ -184,6 +274,7 @@ export function SafetyScenarioActors({
     })
 
     if (ratio >= 1) {
+      pedestrianActiveRef.current = false
       setPedestrianActive(false)
       removeRuntimeHazard('dynamic-person-1')
     } else {

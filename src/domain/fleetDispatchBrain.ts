@@ -1,10 +1,20 @@
 import type { WarehouseLayout } from './layout'
+import type { OperationZone } from './operationsControl'
+import { palletQuantity, productForPallet } from './operationsControl'
 import type {
   FleetMission,
+  FleetMissionRole,
   FleetVehicleDefinition,
 } from './realisticFleet'
 import { buildTrafficCells, trafficCellsConflict } from './realisticFleet'
 import { buildTravelPath, type WorldPoint } from './routePlanning'
+import {
+  assignOperationMission,
+  operationVehicleIsAvailable,
+  recordOperationMission,
+  registerOperationVehicle,
+  useOperationsControlStore,
+} from '../store/operationsControlStore'
 
 export type FleetLanePreference = 'left' | 'right'
 
@@ -15,6 +25,21 @@ export interface DispatchContext {
   activeMissions: FleetMission[]
   reservedMissionIds: Set<string>
   reservedDestinationIds: Set<string>
+}
+
+interface ScoredMission {
+  mission: FleetMission
+  score: number
+  emptyTravel: number
+  congestion: number
+  rolePenalty: number
+}
+
+const ROLE_LABEL: Record<FleetMissionRole, string> = {
+  'inbound-transfer': 'transferência de entrada',
+  putaway: 'armazenagem',
+  replenishment: 'reabastecimento',
+  shipping: 'expedição',
 }
 
 function distance(left: WorldPoint, right: WorldPoint): number {
@@ -42,9 +67,90 @@ function overlapCount(left: Iterable<string>, right: Set<string>): number {
   return count
 }
 
+function decisionReason(
+  vehicle: FleetVehicleDefinition,
+  selected: ScoredMission,
+): string {
+  const lane = vehicleLanePreference(vehicle.id) === 'left' ? 'esquerda' : 'direita'
+  const congestionText =
+    selected.congestion === 0
+      ? 'rota sem conflito relevante'
+      : `${selected.congestion} células compartilhadas fora dos pontos críticos`
+  return `${vehicle.label}: compatível com ${ROLE_LABEL[selected.mission.role]}, ${selected.emptyTravel.toFixed(
+    1,
+  )} m até a origem, preferência pela cabeceira ${lane} e ${congestionText}.`
+}
+
+function sourceZone(mission: FleetMission): OperationZone {
+  const normalized = `${mission.source.id} ${mission.source.label}`.toLocaleLowerCase(
+    'pt-BR',
+  )
+  if (normalized.includes('receiving:') || normalized.includes('recebimento')) {
+    return 'receiving'
+  }
+  if (normalized.includes('staging:') || normalized.includes('espera')) {
+    return 'staging'
+  }
+  if (normalized.includes('truck:') || normalized.includes('caminhão')) {
+    return 'truck'
+  }
+  if (normalized.includes('picking')) return 'picking'
+  if (normalized.includes('address:') || normalized.includes('reserva')) {
+    return 'reserve'
+  }
+  return 'transit'
+}
+
+function registerObservedPallet(mission: FleetMission, at = Date.now()): void {
+  const operation = useOperationsControlStore.getState()
+  if (operation.pallets[mission.palletId]) return
+  const product = productForPallet(mission.palletId)
+  const quantity = palletQuantity(mission.palletId)
+  const zone = sourceZone(mission)
+
+  useOperationsControlStore.setState((state) => {
+    if (state.pallets[mission.palletId]) return state
+    const pallets = {
+      ...state.pallets,
+      [mission.palletId]: {
+        id: mission.palletId,
+        sku: product.sku,
+        description: product.description,
+        units: quantity.units,
+        capacity: quantity.capacity,
+        reorderPoint: quantity.reorderPoint,
+        zone,
+        stopId: mission.source.id,
+        receivedAt: at,
+        updatedAt: at,
+      },
+    }
+    return {
+      pallets,
+      metrics: {
+        ...state.metrics,
+        reserveUnits:
+          state.metrics.reserveUnits + (zone === 'reserve' ? quantity.units : 0),
+        pickingUnits:
+          state.metrics.pickingUnits + (zone === 'picking' ? quantity.units : 0),
+        truckUnits:
+          state.metrics.truckUnits + (zone === 'truck' ? quantity.units : 0),
+      },
+    }
+  })
+}
+
 export function chooseBrainMissionForVehicle(
   context: DispatchContext,
 ): FleetMission | undefined {
+  registerOperationVehicle({
+    id: context.vehicle.id,
+    label: context.vehicle.label,
+    kind: context.vehicle.kind,
+  })
+  if (!operationVehicleIsAvailable(context.vehicle.id)) return undefined
+
+  const truckDocked = useOperationsControlStore.getState().truck.phase === 'docked'
   const activeTraffic = new Set(
     context.activeMissions.flatMap((mission) => mission.trafficCells),
   )
@@ -52,16 +158,17 @@ export function chooseBrainMissionForVehicle(
     context.activeMissions.flatMap((mission) => [...criticalCells(mission)]),
   )
 
-  return context.availableMissions
+  const selected = context.availableMissions
     .filter(
       (mission) =>
         !context.reservedMissionIds.has(mission.id) &&
         !context.reservedDestinationIds.has(mission.destination.id) &&
         mission.eligibleKinds.includes(context.vehicle.kind) &&
         context.vehicle.roles.includes(mission.role) &&
+        (mission.role !== 'shipping' || truckDocked) &&
         !trafficCellsConflict(criticalCells(mission), activeCritical),
     )
-    .map((mission) => {
+    .map((mission): ScoredMission => {
       const emptyTravel = distance(context.vehiclePoint, mission.source.access)
       const congestion = overlapCount(mission.trafficCells, activeTraffic)
       const rolePenalty = context.vehicle.roles.indexOf(mission.role) * 4
@@ -71,9 +178,32 @@ export function chooseBrainMissionForVehicle(
         congestion * 45 +
         rolePenalty +
         mission.sequence * 0.001
-      return { mission, score }
+      return { mission, score, emptyTravel, congestion, rolePenalty }
     })
-    .sort((left, right) => left.score - right.score)[0]?.mission
+    .sort((left, right) => left.score - right.score)[0]
+
+  if (!selected) return undefined
+
+  registerObservedPallet(selected.mission)
+  recordOperationMission({
+    id: selected.mission.id,
+    palletId: selected.mission.palletId,
+    role: selected.mission.role,
+    sourceId: selected.mission.source.id,
+    sourceLabel: selected.mission.source.label,
+    destinationId: selected.mission.destination.id,
+    destinationLabel: selected.mission.destination.label,
+  })
+  assignOperationMission(
+    {
+      id: context.vehicle.id,
+      label: context.vehicle.label,
+      kind: context.vehicle.kind,
+    },
+    selected.mission.id,
+    decisionReason(context.vehicle, selected),
+  )
+  return selected.mission
 }
 
 function pathDistance(points: WorldPoint[]): number {
@@ -121,7 +251,9 @@ export function buildAdaptiveFleetPath(
     .map((lane, index) => {
       const points = candidatePath(layout, from, to, lane)
       if (!points) return undefined
-      const key = points.map((point) => `${point.x.toFixed(2)}:${point.z.toFixed(2)}`).join('|')
+      const key = points
+        .map((point) => `${point.x.toFixed(2)}:${point.z.toFixed(2)}`)
+        .join('|')
       if (seen.has(key)) return undefined
       seen.add(key)
       const cells = buildTrafficCells(points)
