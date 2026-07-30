@@ -140,4 +140,91 @@ describe('TrafficFlowCoordinator', () => {
     expect(['proceed', 'yield']).toContain(decision.action)
     expect(decision.winnerId).not.toBeNull()
   })
+
+  it('mantém todos os bloqueadores observados no mesmo corredor', () => {
+    const coordinator = new TrafficFlowCoordinator()
+    const first = vehicle('EMP-01', 0, 0)
+    const second = vehicle('EMP-02', 2, Math.PI)
+    const third = vehicle('EMP-03', -2, Math.PI / 2)
+
+    coordinator.decide({
+      vehicle: first,
+      hazard: second,
+      separation: 2,
+      blocked: true,
+      now: 6_000,
+    })
+    coordinator.decide({
+      vehicle: first,
+      hazard: third,
+      separation: 2,
+      blocked: true,
+      now: 6_010,
+    })
+    coordinator.decide({
+      vehicle: second,
+      hazard: first,
+      separation: 2,
+      blocked: true,
+      now: 6_020,
+    })
+
+    const decision = coordinator.decide({
+      vehicle: first,
+      hazard: second,
+      separation: 2,
+      blocked: true,
+      now: 6_500,
+    })
+
+    expect(decision.action).toBe('proceed')
+    expect(decision.winnerId).toBe('EMP-01')
+  })
+
+  it('quebra um ciclo de espera entre três veículos com prioridade global', () => {
+    const coordinator = new TrafficFlowCoordinator()
+    const first = vehicle('EMP-01', 0, 0)
+    const second = vehicle('EMP-02', 0.2, Math.PI)
+    const third = vehicle('EMP-03', -0.2, Math.PI / 2)
+
+    const firstAgainstSecond = coordinator.decide({
+      vehicle: first,
+      hazard: second,
+      separation: 0.2,
+      blocked: true,
+      immediateConflict: true,
+      now: 7_000,
+    })
+    const secondAgainstThird = coordinator.decide({
+      vehicle: second,
+      hazard: third,
+      separation: 0.25,
+      blocked: true,
+      immediateConflict: true,
+      now: 7_010,
+    })
+    const thirdAgainstFirst = coordinator.decide({
+      vehicle: third,
+      hazard: first,
+      separation: 0.2,
+      blocked: true,
+      immediateConflict: true,
+      now: 7_020,
+    })
+
+    expect(firstAgainstSecond.winnerId).toBe('EMP-01')
+    expect(secondAgainstThird.winnerId).toBe('EMP-02')
+    expect(thirdAgainstFirst.action).toBe('yield')
+    expect(thirdAgainstFirst.winnerId).toBe('EMP-01')
+
+    const firstCanMove = coordinator.decide({
+      vehicle: first,
+      hazard: third,
+      separation: 0.3,
+      blocked: true,
+      immediateConflict: true,
+      now: 7_030,
+    })
+    expect(firstCanMove.action).toBe('proceed')
+  })
 })
