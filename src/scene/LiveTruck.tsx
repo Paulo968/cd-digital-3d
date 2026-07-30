@@ -97,7 +97,10 @@ export function LiveTruck({ x, dockZ, compact }: LiveTruckProps) {
   const queue = useOperationsControlStore((state) => state.truck.queue)
   const setTruckPhase = useOperationsControlStore((state) => state.setTruckPhase)
   const { invalidate } = useThree()
-  const farZ = dockZ + (compact ? 13 : 20)
+
+  // A operação e a geometria lógica são iguais em qualquer dispositivo.
+  // O modo compacto reduz somente a quantidade de segmentos das rodas.
+  const farZ = dockZ + 20
 
   useEffect(() => {
     const root = rootRef.current
@@ -118,7 +121,7 @@ export function LiveTruck({ x, dockZ, compact }: LiveTruckProps) {
 
     if (phase === 'closing') {
       progressRef.current += delta
-      if (progressRef.current >= (compact ? 0.85 : 1.25)) {
+      if (progressRef.current >= 1.25) {
         setTruckPhase('departing')
       } else {
         invalidate()
@@ -127,10 +130,7 @@ export function LiveTruck({ x, dockZ, compact }: LiveTruckProps) {
     }
 
     if (phase === 'departing') {
-      progressRef.current = Math.min(
-        1,
-        progressRef.current + delta / (compact ? 2.4 : 3.2),
-      )
+      progressRef.current = Math.min(1, progressRef.current + delta / 3.2)
       const eased = THREE.MathUtils.smoothstep(progressRef.current, 0, 1)
       root.position.z = THREE.MathUtils.lerp(dockZ, farZ, eased)
       if (progressRef.current >= 1) setTruckPhase('away')
@@ -140,7 +140,7 @@ export function LiveTruck({ x, dockZ, compact }: LiveTruckProps) {
 
     if (phase === 'away') {
       waitRef.current += delta
-      if (waitRef.current >= (compact ? 1.5 : 2.4)) {
+      if (waitRef.current >= 2.4) {
         setTruckPhase('approaching')
       } else {
         invalidate()
@@ -149,10 +149,7 @@ export function LiveTruck({ x, dockZ, compact }: LiveTruckProps) {
     }
 
     if (phase === 'approaching') {
-      progressRef.current = Math.min(
-        1,
-        progressRef.current + delta / (compact ? 2.7 : 3.5),
-      )
+      progressRef.current = Math.min(1, progressRef.current + delta / 3.5)
       const eased = THREE.MathUtils.smoothstep(progressRef.current, 0, 1)
       root.position.z = THREE.MathUtils.lerp(farZ, dockZ, eased)
       if (progressRef.current >= 1) completeTruckCycle()
@@ -160,7 +157,7 @@ export function LiveTruck({ x, dockZ, compact }: LiveTruckProps) {
     }
   })
 
-  const queueCount = compact ? 0 : Math.min(2, Math.max(0, queue - 1))
+  const queueCount = Math.min(2, Math.max(0, queue - 1))
 
   return (
     <group>
