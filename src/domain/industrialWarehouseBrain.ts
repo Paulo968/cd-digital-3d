@@ -154,19 +154,24 @@ function addressStops(context: WarehouseBrainContext): AddressStops {
           location.status !== 'blocked' &&
           (!lowestOnly || location.level === 1),
       )
-      .sort((left, right) =>
-        left.aisle.localeCompare(right.aisle) ||
-        left.level - right.level ||
-        left.position - right.position,
+      .sort(
+        (left, right) =>
+          left.aisle.localeCompare(right.aisle) ||
+          left.level - right.level ||
+          left.position - right.position,
       )
 
   return {
     reserve: usable('reserve')
       .slice(0, reserveLimit)
-      .map((location) => rackStop(context.layout, location, `Reserva ${location.address}`)),
+      .map((location) =>
+        rackStop(context.layout, location, `Reserva ${location.address}`),
+      ),
     picking: usable('picking', true)
       .slice(0, pickingLimit)
-      .map((location) => rackStop(context.layout, location, `Picking ${location.address}`)),
+      .map((location) =>
+        rackStop(context.layout, location, `Picking ${location.address}`),
+      ),
   }
 }
 
@@ -223,7 +228,9 @@ function belongs(
 
 function aisleFromStop(stop: RealisticMissionStop): string | null {
   if (stop.address) return stop.address.split('-')[0] ?? null
-  return stop.id.match(/aisle-buffer:([A-Za-z0-9]+)/)?.[1] ?? null
+  return (
+    stop.id.match(/(?:aisle|outbound)-buffer:([A-Za-z0-9]+)/)?.[1] ?? null
+  )
 }
 
 function trafficCells(
@@ -286,6 +293,29 @@ function quantitativePickingUnits(): number {
   return tracked ? operation.metrics.pickingUnits : Number.POSITIVE_INFINITY
 }
 
+function pushCandidate(
+  candidates: MissionCandidate[],
+  palletId: string,
+  color: string,
+  role: FleetMission['role'],
+  source: RealisticMissionStop,
+  destination: RealisticMissionStop | undefined,
+  eligibleKinds: FleetVehicleKind[],
+  priority: number,
+): boolean {
+  if (!destination) return false
+  candidates.push({
+    palletId,
+    color,
+    role,
+    source,
+    destination,
+    eligibleKinds,
+    priority,
+  })
+  return true
+}
+
 function industrialCandidate(
   state: WarehouseBrainState,
   context: WarehouseBrainContext,
@@ -304,94 +334,100 @@ function industrialCandidate(
     const color = context.palletColors[palletId] ?? '#38bdf8'
 
     if (belongs(source, plan.inboundTruckStops)) {
-      const destination = freeStop(plan.dischargeStops, occupied, reserved)
-      if (destination) {
-        candidates.push({
-          palletId,
-          color,
-          role: 'inbound-transfer',
-          source,
-          destination,
-          eligibleKinds: ['forklift'],
-          priority: 0,
-        })
-      }
+      pushCandidate(
+        candidates,
+        palletId,
+        color,
+        'inbound-transfer',
+        source,
+        freeStop(plan.dischargeStops, occupied, reserved),
+        ['forklift'],
+        0,
+      )
       return
     }
 
     if (belongs(source, plan.dischargeStops)) {
-      const destination = freeStop(plan.aisleBufferStops, occupied, reserved)
-      if (destination) {
-        candidates.push({
-          palletId,
-          color,
-          role: 'inbound-transfer',
-          source,
-          destination,
-          eligibleKinds: ['pallet-jack'],
-          priority: 1,
-        })
-      }
+      pushCandidate(
+        candidates,
+        palletId,
+        color,
+        'inbound-transfer',
+        source,
+        freeStop(plan.aisleBufferStops, occupied, reserved),
+        ['pallet-jack'],
+        1,
+      )
       return
     }
 
     if (belongs(source, plan.aisleBufferStops)) {
       const aisle = aisleFromStop(source)
-      const destination = freeStop(
-        addresses.reserve,
-        occupied,
-        reserved,
-        (stop) => !aisle || aisleFromStop(stop) === aisle,
+      pushCandidate(
+        candidates,
+        palletId,
+        color,
+        'putaway',
+        source,
+        freeStop(
+          addresses.reserve,
+          occupied,
+          reserved,
+          (stop) => !aisle || aisleFromStop(stop) === aisle,
+        ),
+        ['forklift'],
+        2,
       )
-      if (destination) {
-        candidates.push({
-          palletId,
-          color,
-          role: 'putaway',
-          source,
-          destination,
-          eligibleKinds: ['forklift'],
-          priority: 2,
-        })
-      }
+      return
+    }
+
+    if (belongs(source, plan.outboundAisleBufferStops)) {
+      pushCandidate(
+        candidates,
+        palletId,
+        color,
+        'replenishment',
+        source,
+        freeStop(plan.shippingBufferStops, occupied, reserved),
+        ['pallet-jack'],
+        0,
+      )
       return
     }
 
     if (belongs(source, plan.shippingBufferStops)) {
-      const destination = freeStop(plan.truckStops, occupied, reserved)
-      if (destination) {
-        candidates.push({
-          palletId,
-          color,
-          role: 'shipping',
-          source,
-          destination,
-          eligibleKinds: ['forklift'],
-          priority: 0,
-        })
-      }
+      pushCandidate(
+        candidates,
+        palletId,
+        color,
+        'shipping',
+        source,
+        freeStop(plan.truckStops, occupied, reserved),
+        ['forklift'],
+        0,
+      )
       return
     }
 
     const inReserve = belongs(source, addresses.reserve)
     const inPicking = belongs(source, addresses.picking)
     if (outbound.has(palletId) && (inReserve || inPicking)) {
-      const destination = freeStop(
-        plan.shippingBufferStops,
-        occupied,
-        reserved,
+      const aisle = aisleFromStop(source)
+      pushCandidate(
+        candidates,
+        palletId,
+        color,
+        'replenishment',
+        source,
+        freeStop(
+          plan.outboundAisleBufferStops,
+          occupied,
+          reserved,
+          (stop) => !aisle || aisleFromStop(stop) === aisle,
+        ),
+        ['forklift'],
+        0,
       )
-      if (destination) {
-        candidates.push({
-          palletId,
-          color,
-          role: 'replenishment',
-          source,
-          destination,
-          eligibleKinds: ['forklift'],
-          priority: 0,
-        })
-      }
       return
     }
 
@@ -410,23 +446,22 @@ function industrialCandidate(
     ) {
       return
     }
-    const destination = freeStop(addresses.picking, occupied, reserved)
-    if (destination) {
-      candidates.push({
-        palletId,
-        color,
-        role: 'replenishment',
-        source,
-        destination,
-        eligibleKinds: ['forklift'],
-        priority: profile.id === 'picking-shortage' ? 0 : 4,
-      })
-    }
+    pushCandidate(
+      candidates,
+      palletId,
+      color,
+      'replenishment',
+      source,
+      freeStop(addresses.picking, occupied, reserved),
+      ['forklift'],
+      profile.id === 'picking-shortage' ? 0 : 4,
+    )
   })
 
   return candidates.sort(
     (left, right) =>
-      left.priority - right.priority || left.palletId.localeCompare(right.palletId),
+      left.priority - right.priority ||
+      left.palletId.localeCompare(right.palletId),
   )[0]
 }
 
@@ -447,52 +482,46 @@ function legacyCandidate(
     const color = context.palletColors[palletId] ?? '#38bdf8'
 
     if (belongs(source, context.plan.receivingStops)) {
-      const destination = freeStop(context.plan.stagingStops, occupied, reserved)
-      if (destination) {
-        candidates.push({
-          palletId,
-          color,
-          role: 'inbound-transfer',
-          source,
-          destination,
-          eligibleKinds: ['pallet-jack'],
-          priority: 1,
-        })
-      }
+      pushCandidate(
+        candidates,
+        palletId,
+        color,
+        'inbound-transfer',
+        source,
+        freeStop(context.plan.stagingStops, occupied, reserved),
+        ['pallet-jack'],
+        1,
+      )
       return
     }
 
     if (belongs(source, context.plan.stagingStops)) {
-      const destination = freeStop(addresses.reserve, occupied, reserved)
-      if (destination) {
-        candidates.push({
-          palletId,
-          color,
-          role: 'putaway',
-          source,
-          destination,
-          eligibleKinds: ['forklift'],
-          priority: 1,
-        })
-      }
+      pushCandidate(
+        candidates,
+        palletId,
+        color,
+        'putaway',
+        source,
+        freeStop(addresses.reserve, occupied, reserved),
+        ['forklift'],
+        1,
+      )
       return
     }
 
     const inReserve = belongs(source, addresses.reserve)
     const inPicking = belongs(source, addresses.picking)
     if (outbound.has(palletId) && (inReserve || inPicking)) {
-      const destination = freeStop(context.plan.truckStops, occupied, reserved)
-      if (destination) {
-        candidates.push({
-          palletId,
-          color,
-          role: 'shipping',
-          source,
-          destination,
-          eligibleKinds: inReserve ? ['forklift'] : ['pallet-jack', 'forklift'],
-          priority: 0,
-        })
-      }
+      pushCandidate(
+        candidates,
+        palletId,
+        color,
+        'shipping',
+        source,
+        freeStop(context.plan.truckStops, occupied, reserved),
+        inReserve ? ['forklift'] : ['pallet-jack', 'forklift'],
+        0,
+      )
       return
     }
 
@@ -507,23 +536,22 @@ function legacyCandidate(
     ) {
       return
     }
-    const destination = freeStop(addresses.picking, occupied, reserved)
-    if (destination) {
-      candidates.push({
-        palletId,
-        color,
-        role: 'replenishment',
-        source,
-        destination,
-        eligibleKinds: ['forklift'],
-        priority: profile.id === 'picking-shortage' ? 0 : 3,
-      })
-    }
+    pushCandidate(
+      candidates,
+      palletId,
+      color,
+      'replenishment',
+      source,
+      freeStop(addresses.picking, occupied, reserved),
+      ['forklift'],
+      profile.id === 'picking-shortage' ? 0 : 3,
+    )
   })
 
   return candidates.sort(
     (left, right) =>
-      left.priority - right.priority || left.palletId.localeCompare(right.palletId),
+      left.priority - right.priority ||
+      left.palletId.localeCompare(right.palletId),
   )[0]
 }
 
@@ -535,7 +563,10 @@ function outboundCandidates(
   const pending = new Set(state.pendingOutboundPalletIds)
   const truckIds = new Set(context.plan.truckStops.map((stop) => stop.id))
   const bufferIds = industrialPlanIsActive(context.plan)
-    ? new Set(context.plan.shippingBufferStops.map((stop) => stop.id))
+    ? new Set([
+        ...context.plan.outboundAisleBufferStops.map((stop) => stop.id),
+        ...context.plan.shippingBufferStops.map((stop) => stop.id),
+      ])
     : new Set<string>()
 
   return Object.entries(context.palletStops)
