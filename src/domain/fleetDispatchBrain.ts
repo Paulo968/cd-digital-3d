@@ -10,6 +10,7 @@ import {
   operationVehicleIsAvailable,
   recordOperationMission,
   registerOperationVehicle,
+  useOperationsControlStore,
 } from '../store/operationsControlStore'
 
 export type FleetLanePreference = 'left' | 'right'
@@ -80,6 +81,7 @@ export function chooseBrainMissionForVehicle(
   })
   if (!operationVehicleIsAvailable(context.vehicle.id)) return undefined
 
+  const truckDocked = useOperationsControlStore.getState().truck.phase === 'docked'
   const activeTraffic = new Set(
     context.activeMissions.flatMap((mission) => mission.trafficCells),
   )
@@ -94,6 +96,7 @@ export function chooseBrainMissionForVehicle(
         !context.reservedDestinationIds.has(mission.destination.id) &&
         mission.eligibleKinds.includes(context.vehicle.kind) &&
         context.vehicle.roles.includes(mission.role) &&
+        (mission.role !== 'shipping' || truckDocked) &&
         !trafficCellsConflict(criticalCells(mission), activeCritical),
     )
     .map((mission): ScoredMission => {
