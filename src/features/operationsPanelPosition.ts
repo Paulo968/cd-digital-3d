@@ -35,7 +35,7 @@ export const DESKTOP_PANEL_BOUNDS: PanelBounds = {
 
 export const COMPACT_PANEL_BOUNDS: PanelBounds = {
   margin: 8,
-  topInset: 8,
+  topInset: 72,
   bottomInset: 78,
 }
 
