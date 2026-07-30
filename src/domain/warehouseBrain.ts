@@ -417,7 +417,7 @@ export function decideWarehouseBrain(
   currentState: WarehouseBrainState,
   context: WarehouseBrainContext,
 ): WarehouseBrainDecision {
-  let state = { ...currentState }
+  const state = { ...currentState }
   const addressStops = brainAddressStops(context)
   const loadedPalletIds = loadedTruckPalletIds(context)
 
