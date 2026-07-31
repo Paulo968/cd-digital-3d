@@ -11,6 +11,7 @@ const REACH_PUTAWAY_ROLES: FleetMissionRole[] = ['putaway']
 const REACH_PICK_ROLES: FleetMissionRole[] = ['replenishment']
 const TP_OUTBOUND_ROLES: FleetMissionRole[] = ['replenishment']
 const RX_SHIPPING_ROLES: FleetMissionRole[] = ['shipping']
+const MAX_PALLETS_PER_FLOW = 3
 
 function vehicleById(
   vehicles: FleetVehicleDefinition[],
@@ -54,7 +55,13 @@ function cloneVehicle(
   source: FleetVehicleDefinition | undefined,
   input: Pick<
     FleetVehicleDefinition,
-    'id' | 'label' | 'roles' | 'color' | 'speedScale' | 'startDelay'
+    | 'id'
+    | 'label'
+    | 'roles'
+    | 'color'
+    | 'speedScale'
+    | 'startDelay'
+    | 'startFacing'
   >,
   startPointOverride?: FleetVehicleDefinition['startPoint'],
 ): FleetVehicleDefinition | undefined {
@@ -63,17 +70,6 @@ function cloneVehicle(
     ...source,
     ...input,
     startPoint: startPointOverride ?? source.startPoint,
-  }
-}
-
-function offsetHome(
-  source: FleetVehicleDefinition,
-  distance: number,
-): FleetVehicleDefinition['startPoint'] {
-  return {
-    x: source.startPoint.x + Math.cos(source.startFacing) * distance,
-    y: source.startPoint.y,
-    z: source.startPoint.z + Math.sin(source.startFacing) * distance,
   }
 }
 
@@ -106,42 +102,48 @@ function groupHasRoles(
   return required.every((role) => roles.has(role))
 }
 
+function firstSequence(missions: FleetMission[]): number {
+  return Math.min(...missions.map((mission) => mission.sequence))
+}
+
+function preferredFlowEntries(
+  entries: Array<[string, FleetMission[]]>,
+  pattern: RegExp,
+): Array<[string, FleetMission[]]> {
+  return [...entries].sort(([leftId, left], [rightId, right]) => {
+    const leftPreferred = pattern.test(leftId) ? 0 : 1
+    const rightPreferred = pattern.test(rightId) ? 0 : 1
+    return (
+      leftPreferred - rightPreferred ||
+      firstSequence(left) - firstSequence(right) ||
+      leftId.localeCompare(rightId)
+    )
+  })
+}
+
+/**
+ * Mantém mais de um pallet em cada cadeia para que as retráteis continuem
+ * trabalhando enquanto ainda existir carga no respectivo buffer.
+ */
 function selectDemonstrationPallets(missions: FleetMission[]): string[] {
-  const groups = missionGroups(missions)
-  const entries = [...groups.entries()]
-  const inbound =
-    entries.find(
-      ([palletId, group]) =>
-        /(?:FLOW-IN|DEMO-IN)/i.test(palletId) &&
-        groupHasRoles(group, ['inbound-transfer', 'putaway']),
-    ) ??
-    entries.find(([, group]) =>
+  const entries = [...missionGroups(missions).entries()]
+  const inbound = preferredFlowEntries(
+    entries.filter(([, group]) =>
       groupHasRoles(group, ['inbound-transfer', 'putaway']),
-    )
-  const outbound =
-    entries.find(
-      ([palletId, group]) =>
-        palletId !== inbound?.[0] &&
-        /(?:FLOW-OUT|DEMO-PICK|DEMO-RES)/i.test(palletId) &&
-        groupHasRoles(group, ['replenishment', 'shipping']),
-    ) ??
-    entries.find(
-      ([palletId, group]) =>
-        palletId !== inbound?.[0] &&
-        groupHasRoles(group, ['replenishment', 'shipping']),
-    )
+    ),
+    /(?:FLOW-IN|DEMO-IN)/i,
+  ).slice(0, MAX_PALLETS_PER_FLOW)
+  const outbound = preferredFlowEntries(
+    entries.filter(([, group]) =>
+      groupHasRoles(group, ['replenishment', 'shipping']),
+    ),
+    /(?:FLOW-OUT|DEMO-PICK|DEMO-RES)/i,
+  ).slice(0, MAX_PALLETS_PER_FLOW)
 
-  const selected = [inbound?.[0], outbound?.[0]].filter(
-    (palletId): palletId is string => Boolean(palletId),
-  )
+  const selected = [...inbound, ...outbound].map(([palletId]) => palletId)
+  if (selected.length > 0) return [...new Set(selected)]
 
-  if (selected.length >= 2) return selected
-  for (const palletId of groups.keys()) {
-    if (selected.includes(palletId)) continue
-    selected.push(palletId)
-    if (selected.length >= 2) break
-  }
-  return selected
+  return entries.slice(0, MAX_PALLETS_PER_FLOW * 2).map(([palletId]) => palletId)
 }
 
 function focusedMissions(plan: RealisticFleetPlan): {
@@ -168,15 +170,41 @@ function focusedMissions(plan: RealisticFleetPlan): {
   return { missions, initialPalletStops }
 }
 
+function point(
+  source: FleetVehicleDefinition | undefined,
+  x: number,
+  z: number,
+): FleetVehicleDefinition['startPoint'] {
+  return {
+    x,
+    y: source?.startPoint.y ?? 0.2,
+    z,
+  }
+}
+
+function closestByX(
+  vehicles: FleetVehicleDefinition[],
+  targetX: number,
+  excludedId?: string,
+): FleetVehicleDefinition | undefined {
+  return vehicles
+    .filter((vehicle) => vehicle.id !== excludedId)
+    .sort(
+      (left, right) =>
+        Math.abs(left.startPoint.x - targetX) -
+        Math.abs(right.startPoint.x - targetX),
+    )[0]
+}
+
 /**
- * Constrói duas cadeias operacionais independentes com seis equipamentos:
+ * Constrói duas cadeias independentes e fisicamente separadas:
  *
  * Recebimento: RX-REC → TP-IN → REACH-PUT.
  * Expedição: REACH-PICK → TP-OUT → RX-LOAD.
  *
- * Cada equipamento conserva a posição de espera do plano industrial original.
- * Quando o layout fornece somente uma retrátil, a segunda recebe uma vaga
- * lateral separada, sem nascer sobre a primeira.
+ * As transpaleteiras aguardam no corredor de transferência, fora das áreas
+ * exclusivas das RX20. As retráteis ficam em lados opostos do galpão, em vez de
+ * serem clonadas a poucos metros da mesma vaga.
  */
 export function buildStableFleetPlan(
   plan: RealisticFleetPlan,
@@ -197,12 +225,42 @@ export function buildStableFleetPlan(
     vehicleById(plan.vehicles, 'TP-OUT') ??
     palletJacks.find((vehicle) => vehicle.id !== inboundTpSource?.id) ??
     inboundTpSource
-  const putawayReachSource = reaches[0]
-  const pickReachSource = reaches[1] ?? reaches[0]
-  const pickHome =
-    pickReachSource && pickReachSource === putawayReachSource
-      ? offsetHome(pickReachSource, 3.4)
-      : undefined
+
+  const receivingX = receivingRxSource?.startPoint.x ?? -10
+  const shippingX = shippingRxSource?.startPoint.x ?? 10
+  const sideDirection = shippingX >= receivingX ? 1 : -1
+  const receivingZ = receivingRxSource?.startPoint.z ?? 20
+  const shippingZ = shippingRxSource?.startPoint.z ?? receivingZ
+
+  const putawayReachSource = closestByX(reaches, receivingX) ?? reaches[0]
+  const pickReachSource =
+    closestByX(reaches, shippingX, putawayReachSource?.id) ??
+    reaches.find((vehicle) => vehicle.id !== putawayReachSource?.id) ??
+    putawayReachSource
+
+  // RX20 permanece ao lado da própria doca. Os demais equipamentos ficam mais
+  // para dentro do galpão e deslocados em direção ao centro, sem ocupar a zona
+  // verde/azul reservada para manobra da contrabalançada.
+  const inboundTpHome = point(
+    inboundTpSource,
+    receivingX + sideDirection * 4.8,
+    receivingZ - 5.8,
+  )
+  const outboundTpHome = point(
+    outboundTpSource,
+    shippingX - sideDirection * 4.8,
+    shippingZ - 5.8,
+  )
+  const putawayReachHome = point(
+    putawayReachSource,
+    receivingX + sideDirection * 8.2,
+    receivingZ - 9.2,
+  )
+  const pickReachHome = point(
+    pickReachSource,
+    shippingX - sideDirection * 8.2,
+    shippingZ - 9.2,
+  )
   const focused = focusedMissions(plan)
 
   const vehicles = uniqueVehicles([
@@ -213,43 +271,60 @@ export function buildStableFleetPlan(
       color: '#16a34a',
       speedScale: Math.min(receivingRxSource?.speedScale ?? 1, 0.88),
       startDelay: 0,
+      startFacing: receivingRxSource?.startFacing ?? Math.PI,
     }),
-    cloneVehicle(inboundTpSource, {
-      id: 'TP-IN',
-      label: 'Transpaleteira de entrada — descarga para o buffer da rua',
-      roles: TP_INBOUND_ROLES,
-      color: '#0ea5e9',
-      speedScale: Math.min(inboundTpSource?.speedScale ?? 1, 0.94),
-      startDelay: 0.2,
-    }),
-    cloneVehicle(putawayReachSource, {
-      id: 'REACH-PUT',
-      label: 'Retrátil de armazenagem — buffer para o endereço',
-      roles: REACH_PUTAWAY_ROLES,
-      color: '#f59e0b',
-      speedScale: Math.min(putawayReachSource?.speedScale ?? 1, 0.82),
-      startDelay: 0.4,
-    }),
+    cloneVehicle(
+      inboundTpSource,
+      {
+        id: 'TP-IN',
+        label: 'Transpaleteira de entrada — descarga para o buffer da rua',
+        roles: TP_INBOUND_ROLES,
+        color: '#0ea5e9',
+        speedScale: Math.min(inboundTpSource?.speedScale ?? 1, 0.94),
+        startDelay: 0.2,
+        startFacing: 0,
+      },
+      inboundTpHome,
+    ),
+    cloneVehicle(
+      putawayReachSource,
+      {
+        id: 'REACH-PUT',
+        label: 'Retrátil do recebimento — armazenagem no endereço',
+        roles: REACH_PUTAWAY_ROLES,
+        color: '#f59e0b',
+        speedScale: Math.min(putawayReachSource?.speedScale ?? 1, 0.82),
+        startDelay: 0.4,
+        startFacing: 0,
+      },
+      putawayReachHome,
+    ),
     cloneVehicle(
       pickReachSource,
       {
         id: 'REACH-PICK',
-        label: 'Retrátil de retirada — endereço para o buffer de saída',
+        label: 'Retrátil da expedição — retirada para o buffer de saída',
         roles: REACH_PICK_ROLES,
         color: '#eab308',
         speedScale: Math.min(pickReachSource?.speedScale ?? 1, 0.82),
         startDelay: 0.6,
+        startFacing: 0,
       },
-      pickHome,
+      pickReachHome,
     ),
-    cloneVehicle(outboundTpSource, {
-      id: 'TP-OUT',
-      label: 'Transpaleteira de saída — buffer da rua para o pré-embarque',
-      roles: TP_OUTBOUND_ROLES,
-      color: '#2563eb',
-      speedScale: Math.min(outboundTpSource?.speedScale ?? 1, 0.94),
-      startDelay: 0.8,
-    }),
+    cloneVehicle(
+      outboundTpSource,
+      {
+        id: 'TP-OUT',
+        label: 'Transpaleteira de saída — buffer para o pré-embarque',
+        roles: TP_OUTBOUND_ROLES,
+        color: '#2563eb',
+        speedScale: Math.min(outboundTpSource?.speedScale ?? 1, 0.94),
+        startDelay: 0.8,
+        startFacing: 0,
+      },
+      outboundTpHome,
+    ),
     cloneVehicle(shippingRxSource, {
       id: 'RX-LOAD',
       label: 'RX 20-20 — carregamento exclusivo da expedição',
@@ -257,6 +332,7 @@ export function buildStableFleetPlan(
       color: '#0284c7',
       speedScale: Math.min(shippingRxSource?.speedScale ?? 1, 0.88),
       startDelay: 1,
+      startFacing: shippingRxSource?.startFacing ?? Math.PI,
     }),
   ])
 

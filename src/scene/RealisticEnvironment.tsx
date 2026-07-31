@@ -14,6 +14,7 @@ import {
 import type { WarehouseLocation } from '../domain/warehouse'
 import { RealisticOperationsMenu } from '../features/RealisticOperationsMenu'
 import { FleetOperation } from './FleetOperation'
+import { LiveInboundTruck } from './LiveInboundTruck'
 import { LiveTruck } from './LiveTruck'
 import { PalletCollisionRegistry } from './PalletCollisionRegistry'
 import { SafetyScenarioActors } from './SafetyScenarioActors'
@@ -266,11 +267,9 @@ function FloorSupports({ stops }: { stops: RealisticMissionStop[] }) {
 function WarehouseShell({
   layout,
   geometry,
-  compact,
 }: {
   layout: WarehouseLayout
   geometry: EnvironmentGeometry
-  compact: boolean
 }) {
   const { bounds, centerX, centerZ, width, depth, frontZ } = geometry
   const maximumRackHeight = Math.max(
@@ -326,12 +325,6 @@ function WarehouseShell({
 
       <DockPortal x={geometry.receivingX} frontZ={frontZ} label="RECEBIMENTO" />
       <DockPortal x={geometry.shippingX} frontZ={frontZ} label="EXPEDIÇÃO" />
-      <StaticTruck
-        x={geometry.receivingX}
-        z={frontZ + 5.1}
-        accent="#16a34a"
-        compact={compact}
-      />
       <mesh position={[centerX, 0.018, frontZ + 5.2]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[width, 11]} />
         <meshStandardMaterial color="#374151" roughness={0.98} />
@@ -357,7 +350,7 @@ export function RealisticEnvironment({
 
   return (
     <group>
-      <WarehouseShell layout={layout} geometry={geometry} compact={compact} />
+      <WarehouseShell layout={layout} geometry={geometry} />
       <FloorSupports
         stops={[
           ...plan.dischargeStops,
@@ -367,12 +360,20 @@ export function RealisticEnvironment({
         ]}
       />
       {!automaticOperationVisible && (
-        <StaticTruck
-          x={geometry.shippingX}
-          z={geometry.frontZ + 5.1}
-          accent="#0284c7"
-          compact={compact}
-        />
+        <>
+          <StaticTruck
+            x={geometry.receivingX}
+            z={geometry.frontZ + 5.1}
+            accent="#16a34a"
+            compact={compact}
+          />
+          <StaticTruck
+            x={geometry.shippingX}
+            z={geometry.frontZ + 5.1}
+            accent="#0284c7"
+            compact={compact}
+          />
+        </>
       )}
       {automaticOperationVisible && (
         <>
@@ -381,6 +382,11 @@ export function RealisticEnvironment({
             layout={layout}
             locations={locations}
             plan={plan}
+            compact={compact}
+          />
+          <LiveInboundTruck
+            x={geometry.receivingX}
+            dockZ={geometry.frontZ + 5.1}
             compact={compact}
           />
           <LiveTruck

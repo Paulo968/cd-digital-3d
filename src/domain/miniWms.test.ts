@@ -169,10 +169,12 @@ describe('mini WMS', () => {
     expect(selected?.id).toBe('inbound-transfer')
   })
 
-  it('mantém o carregamento aguardando enquanto o caminhão está fora da doca', () => {
-    expect(truckAllowsMiniWmsMission(loadTruck, false)).toBe(false)
-    expect(truckAllowsMiniWmsMission(loadTruck, true)).toBe(true)
-    expect(truckAllowsMiniWmsMission(unload, false)).toBe(true)
+  it('bloqueia cada RX20 quando a respectiva doca está vazia', () => {
+    expect(truckAllowsMiniWmsMission(loadTruck, false, true)).toBe(false)
+    expect(truckAllowsMiniWmsMission(loadTruck, true, true)).toBe(true)
+    expect(truckAllowsMiniWmsMission(unload, true, false)).toBe(false)
+    expect(truckAllowsMiniWmsMission(unload, false, true)).toBe(true)
+    expect(truckAllowsMiniWmsMission(inboundTransfer, false, false)).toBe(true)
   })
 
   it('gera IDs novos para cada ciclo operacional', () => {

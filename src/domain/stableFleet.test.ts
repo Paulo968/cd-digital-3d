@@ -39,7 +39,7 @@ describe('buildStableFleetPlan', () => {
     ])
   })
 
-  it('mantém duas cadeias demonstrativas completas com três etapas cada', () => {
+  it('mantém vários pallets em filas completas de três etapas', () => {
     const stable = stablePlan()
     const groups = new Map<string, typeof stable.missions>()
 
@@ -49,7 +49,8 @@ describe('buildStableFleetPlan', () => {
       groups.set(mission.palletId, group)
     })
 
-    expect(groups.size).toBe(2)
+    expect(groups.size).toBeGreaterThanOrEqual(2)
+    expect(groups.size).toBeLessThanOrEqual(6)
     ;[...groups.values()].forEach((missions) => {
       expect(missions).toHaveLength(3)
       const roles = missions.map((mission) => mission.role)
@@ -66,6 +67,34 @@ describe('buildStableFleetPlan', () => {
     })
   })
 
+  it('coloca recebimento e expedição em lados opostos', () => {
+    const stable = stablePlan()
+    const byId = Object.fromEntries(
+      stable.vehicles.map((vehicle) => [vehicle.id, vehicle]),
+    )
+
+    expect(byId['RX-REC'].startPoint.x).toBeLessThan(
+      byId['RX-LOAD'].startPoint.x,
+    )
+    expect(byId['REACH-PUT'].startPoint.x).toBeLessThan(
+      byId['REACH-PICK'].startPoint.x,
+    )
+    expect(byId['TP-IN'].startPoint.x).toBeLessThan(
+      byId['TP-OUT'].startPoint.x,
+    )
+
+    const inboundTpFromRx = Math.hypot(
+      byId['TP-IN'].startPoint.x - byId['RX-REC'].startPoint.x,
+      byId['TP-IN'].startPoint.z - byId['RX-REC'].startPoint.z,
+    )
+    const outboundTpFromRx = Math.hypot(
+      byId['TP-OUT'].startPoint.x - byId['RX-LOAD'].startPoint.x,
+      byId['TP-OUT'].startPoint.z - byId['RX-LOAD'].startPoint.z,
+    )
+    expect(inboundTpFromRx).toBeGreaterThan(5)
+    expect(outboundTpFromRx).toBeGreaterThan(5)
+  })
+
   it('não posiciona dois equipamentos na mesma vaga de espera', () => {
     const stable = stablePlan()
 
@@ -75,7 +104,7 @@ describe('buildStableFleetPlan', () => {
           vehicle.startPoint.x - other.startPoint.x,
           vehicle.startPoint.z - other.startPoint.z,
         )
-        expect(distance).toBeGreaterThan(1.5)
+        expect(distance).toBeGreaterThan(2.5)
       })
     })
   })
