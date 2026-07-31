@@ -9,6 +9,7 @@ import { MiniWmsHomeZones } from './MiniWmsHomeZones'
 import { MiniWmsPalletVisibilityBridge } from './MiniWmsPalletVisibilityBridge'
 import { MiniWmsTruckCycleController } from './MiniWmsTruckCycleController'
 import { OutboundPilotRackLayer } from './OutboundPilotRackLayer'
+import { PalletCollisionRegistry } from './PalletCollisionRegistry'
 import { TrafficFlowMarkers } from './TrafficFlowMarkers'
 
 interface FleetOperationProps {
@@ -45,6 +46,7 @@ export function FleetOperation({
     <>
       <MiniWmsTruckCycleController />
       <MiniWmsPalletVisibilityBridge plan={dispatchPlan} />
+      <PalletCollisionRegistry plan={dispatchPlan} />
       <OutboundPilotRackLayer layout={layout} locations={locations} />
       <TrafficFlowMarkers layout={layout} compact={compact} />
       <MiniWmsHomeZones vehicles={outboundPlan.vehicles} />
