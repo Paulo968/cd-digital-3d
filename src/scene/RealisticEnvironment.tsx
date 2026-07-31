@@ -1,6 +1,7 @@
 import type { WarehouseLayout } from '../domain/layout'
 import type { WarehouseLocation } from '../domain/warehouse'
 import { RealisticReceivingWorld } from './RealisticReceivingWorld'
+import { RealisticSceneIsolation } from './RealisticSceneIsolation'
 
 interface RealisticEnvironmentProps {
   layout: WarehouseLayout
@@ -20,5 +21,9 @@ interface RealisticEnvironmentProps {
 export function RealisticEnvironment({
   compact,
 }: RealisticEnvironmentProps) {
-  return <RealisticReceivingWorld compact={compact} />
+  return (
+    <RealisticSceneIsolation>
+      <RealisticReceivingWorld compact={compact} />
+    </RealisticSceneIsolation>
+  )
 }
