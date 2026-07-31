@@ -1,19 +1,20 @@
 import { describe, expect, it } from 'vitest'
-import './compactStagingLayout'
-import './receivingPathRefinement'
 import {
   forkliftCollisionReason,
-  ReceivingSimulation,
   stagingPoint,
 } from './receivingSimulation'
 import {
+  COMPACT_RECEIVING_CONFIG,
   COMPACT_STAGING_POINTS,
   FUTURE_TRANSPALLET_LANE,
+  createCompactReceivingSimulation,
 } from './compactStagingLayout'
 
 describe('staging compacto com faixa futura', () => {
   it('organiza seis posições em duas colunas e três fileiras', () => {
-    const points = Array.from({ length: 6 }, (_, index) => stagingPoint(index))
+    const points = Array.from({ length: 6 }, (_, index) =>
+      stagingPoint(index, COMPACT_RECEIVING_CONFIG),
+    )
 
     expect(points).toEqual(COMPACT_STAGING_POINTS)
     expect(new Set(points.map((point) => point.x)).size).toBe(2)
@@ -43,7 +44,7 @@ describe('staging compacto com faixa futura', () => {
   })
 
   it('completa dez caminhões sem colisão no novo bloco', () => {
-    const simulation = new ReceivingSimulation()
+    const simulation = createCompactReceivingSimulation()
 
     for (let frame = 0; frame < 360_000; frame += 1) {
       simulation.step(1 / 30)
@@ -55,6 +56,7 @@ describe('staging compacto com faixa futura', () => {
           state,
           state.forklift.position,
           state.forklift.carryingPalletId ?? undefined,
+          COMPACT_RECEIVING_CONFIG,
         ),
       ).toBeNull()
 
