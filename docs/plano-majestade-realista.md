@@ -4,142 +4,90 @@
 
 O modo Realista evolui como um sistema de simulação logística, não como uma sequência crescente de cenas versionadas.
 
-A regra central passa a ser:
-
 > domínio e simulação decidem; Three.js representa.
 
-A primeira entrega desta migração substitui alterações globais de constantes e `prototype` por uma configuração explícita de cenário. O recebimento padrão e o recebimento crescente podem coexistir sem depender da ordem de imports.
+## Entregue
 
-## Fundação entregue
+### Fundação configurável
 
-- `ReceivingScenarioConfig` concentra dimensões, velocidades, capacidades e estratégias de trajetória;
-- `ReceivingSimulation` recebe o cenário no construtor;
-- pallets são acoplados e desacoplados por identificador, não pela posição circunstancial no array;
-- capacidade e persistência do staging são regras do cenário;
-- curvas de aproximação e retorno são resolvidas no início real da ação;
-- `growingReceivingOperation` deixou de modificar `RECEIVING_V2` e `ReceivingSimulation.prototype`;
-- a cena ativa usa `createGrowingReceivingSimulation()` explicitamente;
-- testes validam a coexistência dos cenários e a preservação de pallets entre caminhões.
+- cenários padrão, compacto e crescente independentes;
+- `ReceivingScenarioConfig` explícito;
+- pallets identificados por ID estável;
+- capacidade e persistência do staging como regras do cenário;
+- remoção de mutações globais e alterações de `prototype`.
 
-## Fase 1 — Kernel de mundo — ENTREGUE
-
-O kernel vivo já controla:
+### Kernel vivo
 
 - passo fixo determinístico em 30 Hz;
-- pausa, retomada, avanço manual e escala de tempo;
+- pausa, retomada, passo manual e escala de tempo;
 - comandos imediatos ou agendados;
-- eventos serializáveis com tick e tempo de simulação;
+- eventos serializáveis com tempo e tick;
 - snapshots e restauração;
-- contrato comum para registrar novos sistemas;
-- integração real do recebimento crescente.
+- contrato comum para novos sistemas;
+- recebimento crescente conectado ao kernel.
 
-A experiência visual também recebeu a primeira evolução perceptível:
+### Experiência visual perceptível
 
 - ritmo padrão 2× e controles 1×, 2×, 4× e 8×;
-- câmera cinematográfica, visão geral, acompanhamento da RX20 e câmera da doca;
-- HUD operacional com progresso do caminhão, telemetria e eventos ao vivo;
-- trilha luminosa, beacon da empilhadeira e sinais pulsantes de doca;
-- iluminação industrial, slots de staging e corredor futuro da TP-IN destacados.
+- câmera cinema, visão geral, acompanhamento da RX20 e câmera da doca;
+- HUD com progresso, telemetria, velocidade e eventos ao vivo;
+- trilha luminosa, beacon operacional e sinais pulsantes de doca;
+- iluminação industrial, slots de staging e corredor da TP-IN destacados;
+- caminhão visualmente enriquecido.
 
 ## Próximas fases
 
 ### Fase 2 — Tarefas em vez de coreografia
 
-Representar descarga, transferência e armazenagem como tarefas com estados:
-
 ```text
 created → waiting-resources → assigned → executing → completed
 ```
 
-Critérios:
-
-- veículo recebe tarefa, não uma lista global pré-montada;
+- veículo recebe tarefa, não lista global de movimentos;
 - origem e destino são reservados;
 - tarefa aguarda quando staging ou buffer está ocupado;
 - falha não apaga pallet nem missão.
 
 ### Fase 3 — Primeira cadeia viva
 
-Implementar:
-
 ```text
 caminhão → RX20 → staging → TP-IN → buffer da rua A → retrátil → reserva
 ```
 
-Critérios:
-
-- TP-IN só recebe tarefa depois do depósito no staging;
-- retrátil só recebe tarefa depois da chegada ao buffer;
-- caminhão só sai depois da descarga concluída;
-- nenhuma etapa depende de temporizador usado como confirmação logística;
-- segundo caminhão não exige editar a coreografia da RX20.
+- TP-IN só recebe tarefa após depósito no staging;
+- retrátil só recebe tarefa após chegada ao buffer;
+- caminhão só sai após descarga concluída;
+- segundo caminhão não exige reescrever coreografia.
 
 ### Fase 4 — Grafo operacional e tráfego
 
-Gerar nós e conexões para docas, cruzamentos, ruas, buffers e posições. Separar planejamento lógico de rota da suavização visual da trajetória.
-
-Critérios:
-
-- sentidos e tipos de veículo permitidos;
+- nós para docas, cruzamentos, ruas, buffers e posições;
+- sentidos e veículos permitidos;
 - velocidade por zona;
-- reserva curta de segmentos e cruzamentos;
-- espera segura;
-- detecção e recuperação de deadlock.
+- reservas curtas de segmentos;
+- espera segura e recuperação de deadlock.
 
 ### Fase 5 — Reintegração do cérebro industrial
 
-Adaptar `industrialWarehouseBrain` e `fleetDispatchBrain` ao novo kernel.
-
-Preservar:
-
-- papéis e territórios;
-- buffers físicos;
-- prioridade, distância e congestionamento;
-- justificativa das decisões;
-- cenários operacionais;
-- Monte Carlo como estratégia opcional.
-
-Remover:
-
-- estado global fora do mundo;
-- escrita direta e acoplada em múltiplos stores;
-- decisões dependentes de tempo do navegador;
-- telemetria usada como fonte de verdade da operação.
+Adaptar `industrialWarehouseBrain` e `fleetDispatchBrain`, preservando papéis, territórios, buffers, prioridade, distância, congestionamento, justificativas e Monte Carlo opcional.
 
 ### Fase 6 — Fluxo ponta a ponta
 
-Expandir progressivamente para recebimento, putaway, reposição, picking, consolidação, pré-embarque, carregamento e expedição.
-
-Cada etapa deve entrar como workflow e publicar eventos rastreáveis.
+Expandir para recebimento, putaway, reposição, picking, consolidação, pré-embarque, carregamento e expedição.
 
 ## Regras de engenharia
 
-- não criar `RealisticWorldV5`, `V6` ou novas versões como arquitetura permanente;
+- não criar versões permanentes `RealisticWorldV5`, `V6`;
 - não alterar protótipos durante imports;
-- não usar objetos Three.js como fonte da verdade;
+- não usar Three.js como fonte da verdade;
 - não misturar estoque oficial com inventário demonstrativo;
-- não adicionar física rígida pesada antes de existir grafo, tarefas e reservas;
-- não colocar Monte Carlo como decisor principal antes de rollouts sobre cópias reais do estado;
-- manter renderização por refs e snapshots limitados para proteger desempenho.
-
-## Métricas da majestade
-
-- throughput por hora simulada;
-- tempo de ciclo por processo;
-- distância vazia e carregada;
-- utilização por equipamento;
-- tempo em fila;
-- ocupação de staging e buffers;
-- bloqueios, paradas e deadlocks;
-- tarefas concluídas, atrasadas e replanejadas;
-- explicação de cada designação.
+- não adicionar física pesada antes de grafo, tarefas e reservas;
+- manter renderização por refs e snapshots limitados.
 
 ## Definição de pronto
 
-O modo será considerado uma operação viva quando:
-
-- o caminhão sair porque o processo terminou, não porque a animação acabou;
-- o veículo se mover porque recebeu uma tarefa válida;
-- cada pallet possuir uma cadeia de eventos reproduzível;
-- gargalos alterarem o comportamento do restante da operação;
-- novos veículos e caminhões entrarem sem reescrever roteiros existentes.
+- caminhão sai porque o processo terminou;
+- veículo se move porque recebeu tarefa válida;
+- pallet possui cadeia de eventos reproduzível;
+- gargalos alteram o restante da operação;
+- novos veículos entram sem reescrever roteiros.
