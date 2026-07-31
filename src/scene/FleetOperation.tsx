@@ -3,7 +3,7 @@ import type { WarehouseLayout } from '../domain/layout'
 import type { RealisticFleetPlan } from '../domain/realisticFleet'
 import { buildStableFleetPlan } from '../domain/stableFleet'
 import type { WarehouseLocation } from '../domain/warehouse'
-import { LiveFleetOperation } from './LiveFleetOperation'
+import { MiniWmsFleetOperation } from './MiniWmsFleetOperation'
 import { TrafficFlowMarkers } from './TrafficFlowMarkers'
 
 interface FleetOperationProps {
@@ -14,14 +14,12 @@ interface FleetOperationProps {
 }
 
 /**
- * A operação realista usa a mesma célula logística em qualquer dispositivo:
- * uma RX 20 contrabalançada, uma retrátil e uma transpaleteira. A redução não
- * remove etapas do fluxo; ela elimina equipamentos redundantes disputando as
- * mesmas docas e corredores durante a demonstração.
+ * Executa uma célula Mini-WMS determinística. O controlador distribui as
+ * etapas por tipo de equipamento; o 3D apenas cumpre a ordem recebida e aplica
+ * sensores mais contato físico rígido.
  */
 export function FleetOperation({
   layout,
-  locations,
   plan,
   compact,
 }: FleetOperationProps) {
@@ -30,9 +28,8 @@ export function FleetOperation({
   return (
     <>
       <TrafficFlowMarkers layout={layout} compact={compact} />
-      <LiveFleetOperation
+      <MiniWmsFleetOperation
         layout={layout}
-        locations={locations}
         plan={stablePlan}
         compact={false}
       />
