@@ -8,7 +8,9 @@ A regra central passa a ser:
 
 > domínio e simulação decidem; Three.js representa.
 
-A primeira entrega desta migração substitui alterações globais de constantes e `prototype` por uma configuração explícita de cenário. O recebimento padrão e o recebimento crescente podem coexistir sem depender da ordem de imports.
+A primeira entrega substituiu alterações globais de constantes e `prototype` por configurações explícitas de cenário. Os recebimentos padrão, compacto e crescente coexistem sem depender da ordem de imports.
+
+A segunda entrega introduziu o kernel vivo e conectou o recebimento crescente a ele.
 
 ## Fundação entregue
 
@@ -17,22 +19,27 @@ A primeira entrega desta migração substitui alterações globais de constantes
 - pallets são acoplados e desacoplados por identificador, não pela posição circunstancial no array;
 - capacidade e persistência do staging são regras do cenário;
 - curvas de aproximação e retorno são resolvidas no início real da ação;
-- `growingReceivingOperation` deixou de modificar `RECEIVING_V2` e `ReceivingSimulation.prototype`;
-- a cena ativa usa `createGrowingReceivingSimulation()` explicitamente;
+- layouts compacto e crescente deixaram de modificar `RECEIVING_V2` e `ReceivingSimulation.prototype`;
+- a cena ativa usa uma fábrica explícita do cenário crescente;
 - testes validam a coexistência dos cenários e a preservação de pallets entre caminhões.
 
+## Kernel vivo entregue
+
+- relógio determinístico com passo fixo de 30 Hz;
+- pausa, retomada, escala de tempo e avanço de um tick;
+- fila de comandos imediatos ou agendados;
+- execução de comandos no início do tick;
+- registro limitado de eventos serializáveis;
+- snapshots do relógio, comandos, eventos e sistemas;
+- restauração com reprodução determinística do mesmo futuro;
+- contrato comum para novos sistemas;
+- sistema `receiving` conectado ao kernel;
+- eventos de transição, caminhão, pallet, lote, reset e falha;
+- cena existente avançando pelo runtime do kernel sem depender do React para decidir o tempo.
+
+A especificação está em [`docs/kernel-vivo.md`](kernel-vivo.md).
+
 ## Próximas fases
-
-### Fase 1 — Kernel de mundo
-
-Criar `WorldState`, relógio de passo fixo, registro de entidades e log de eventos. O estado precisa ser serializável e reproduzível por semente.
-
-Critérios:
-
-- simulação independente do React;
-- pausa, avanço e reinício determinísticos;
-- snapshot e restauração;
-- eventos com tempo de simulação.
 
 ### Fase 2 — Tarefas em vez de coreografia
 
