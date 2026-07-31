@@ -51,7 +51,54 @@ export interface ReceivingSimulationState {
   pallets: ReceivingPallet[]
 }
 
-export const RECEIVING_V2 = {
+export interface ReceivingCurveControls {
+  control1: Point2
+  control2: Point2
+}
+
+export interface ReceivingScenarioConfig {
+  id: string
+  palletIdPrefix: string
+  floorWidth: number
+  floorDepth: number
+  dockWallZ: number
+  truckDockZ: number
+  truckSpawnZ: number
+  trailerRearZ: number
+  trailerFrontZ: number
+  trailerHalfWidth: number
+  trailerInnerHalfWidth: number
+  forkliftRadius: number
+  forkliftHome: Point2
+  truckClearZ: number
+  pickupLaneZ: number
+  stagingApproachZ: number
+  stagingZ: number
+  stageXs: readonly number[]
+  palletXs: readonly number[]
+  palletZs: readonly number[]
+  palletsPerTruck: number
+  stagingCapacity: number
+  preserveStagedPallets: boolean
+  travelForkHeight: number
+  pickupForkHeight: number
+  insertionForkHeight: number
+  forwardSpeed: number
+  loadedSpeed: number
+  reverseSpeed: number
+  angularSpeed: number
+  acceleration: number
+  braking: number
+  truckSpeed: number
+  gapSeconds: number
+  resolveStagingPoint?: (index: number) => Point2
+  resolveDockApproachControl?: (current: Point2) => Point2
+  resolveReturnHomeCurve?: (current: Point2) => ReceivingCurveControls
+}
+
+export const RECEIVING_V2: ReceivingScenarioConfig = {
+  id: 'receiving-v2',
+  palletIdPrefix: 'REC-V2',
   floorWidth: 72,
   floorDepth: 86,
   dockWallZ: 28,
@@ -62,7 +109,7 @@ export const RECEIVING_V2 = {
   trailerHalfWidth: 2.25,
   trailerInnerHalfWidth: 2.02,
   forkliftRadius: 0.72,
-  forkliftHome: { x: -20, z: -25 } satisfies Point2,
+  forkliftHome: { x: -20, z: -25 },
   truckClearZ: 19,
   pickupLaneZ: 24.2,
   stagingApproachZ: -11.5,
@@ -70,6 +117,9 @@ export const RECEIVING_V2 = {
   stageXs: [-15, -9, -3, 3, 9, 15],
   palletXs: [-1.05, 1.05],
   palletZs: [31.1, 34, 36.9],
+  palletsPerTruck: 6,
+  stagingCapacity: 6,
+  preserveStagedPallets: false,
   travelForkHeight: 0.24,
   pickupForkHeight: 0.82,
   insertionForkHeight: 0.5,
@@ -81,7 +131,15 @@ export const RECEIVING_V2 = {
   braking: 5.6,
   truckSpeed: 13.5,
   gapSeconds: 1,
-} as const
+  resolveDockApproachControl: (current) => ({
+    x: current.x,
+    z: Math.max(current.z + 10, 1),
+  }),
+  resolveReturnHomeCurve: () => ({
+    control1: { x: 15, z: -23 },
+    control2: { x: -12, z: -25 },
+  }),
+}
 
 const PALLET_COLORS = [
   '#38bdf8',
@@ -90,6 +148,8 @@ const PALLET_COLORS = [
   '#f472b6',
   '#a78bfa',
   '#22d3ee',
+  '#fb7185',
+  '#60a5fa',
 ]
 
 interface MoveLineAction {
@@ -103,6 +163,8 @@ interface MoveLineAction {
   ignorePalletId?: string
 }
 
+type CurveRole = 'dock-approach' | 'return-home'
+
 interface MoveCurveAction {
   kind: 'move-curve'
   control1: Point2
@@ -112,6 +174,7 @@ interface MoveCurveAction {
   reverse: boolean
   phase: ForkliftPhase
   label: string
+  curveRole?: CurveRole
 }
 
 interface RotateAction {
@@ -138,12 +201,12 @@ interface WaitAction {
 
 interface AttachAction {
   kind: 'attach'
-  palletIndex: number
+  palletId: string
 }
 
 interface DetachAction {
   kind: 'detach'
-  palletIndex: number
+  palletId: string
   stageIndex: number
 }
 
@@ -263,30 +326,47 @@ function approximateCurveLength(
   return total
 }
 
-function createPallets(batch: number): ReceivingPallet[] {
-  return Array.from({ length: 6 }, (_, index) => ({
-    id: `REC-V2-${String(batch).padStart(3, '0')}-${index + 1}`,
+function createPallets(
+  batch: number,
+  config: ReceivingScenarioConfig,
+): ReceivingPallet[] {
+  return Array.from({ length: config.palletsPerTruck }, (_, index) => ({
+    id: `${config.palletIdPrefix}-${String(batch).padStart(3, '0')}-${index + 1}`,
     index,
     phase: 'truck' as const,
     stagedSlot: null,
-    color: PALLET_COLORS[index],
+    color: PALLET_COLORS[index % PALLET_COLORS.length],
   }))
 }
 
-export function truckPalletPoint(index: number): Point2 {
-  const row = Math.floor(index / 2)
-  const column = index % 2
-  return {
-    x: RECEIVING_V2.palletXs[column],
-    z: RECEIVING_V2.palletZs[row],
+export function truckPalletPoint(
+  index: number,
+  config: ReceivingScenarioConfig = RECEIVING_V2,
+): Point2 {
+  const columns = config.palletXs.length
+  const row = Math.floor(index / columns)
+  const column = index % columns
+  const x = config.palletXs[column]
+  const z = config.palletZs[row]
+  if (x === undefined || z === undefined) {
+    throw new Error(`Posição de pallet no caminhão inexistente: ${index}`)
   }
+  return { x, z }
 }
 
-export function stagingPoint(index: number): Point2 {
-  return {
-    x: RECEIVING_V2.stageXs[index],
-    z: RECEIVING_V2.stagingZ,
+export function stagingPoint(
+  index: number,
+  config: ReceivingScenarioConfig = RECEIVING_V2,
+): Point2 {
+  if (!Number.isInteger(index) || index < 0 || index >= config.stagingCapacity) {
+    throw new Error(`Posição de staging inexistente: ${index}`)
   }
+  if (config.resolveStagingPoint) return config.resolveStagingPoint(index)
+  const x = config.stageXs[index]
+  if (x === undefined) {
+    throw new Error(`Posição de staging inexistente: ${index}`)
+  }
+  return { x, z: config.stagingZ }
 }
 
 function circleHitsPoint(
@@ -302,27 +382,28 @@ export function forkliftCollisionReason(
   state: ReceivingSimulationState,
   proposed: Point2,
   ignorePalletId?: string,
+  config: ReceivingScenarioConfig = RECEIVING_V2,
 ): string | null {
-  const radius = RECEIVING_V2.forkliftRadius
-  const halfWidth = RECEIVING_V2.floorWidth / 2
-  const halfDepth = RECEIVING_V2.floorDepth / 2
+  const radius = config.forkliftRadius
+  const halfWidth = config.floorWidth / 2
+  const halfDepth = config.floorDepth / 2
 
   if (
     proposed.x < -halfWidth + radius ||
     proposed.x > halfWidth - radius ||
     proposed.z < -halfDepth + radius ||
-    proposed.z > RECEIVING_V2.trailerFrontZ - radius
+    proposed.z > config.trailerFrontZ - radius
   ) {
     return 'limite físico do mundo'
   }
 
   const insideTrailerLongitudinal =
-    proposed.z > RECEIVING_V2.trailerRearZ + 0.05 &&
-    proposed.z < RECEIVING_V2.trailerFrontZ
+    proposed.z > config.trailerRearZ + 0.05 &&
+    proposed.z < config.trailerFrontZ
   if (
     state.truck.phase === 'docked' &&
     insideTrailerLongitudinal &&
-    Math.abs(proposed.x) > RECEIVING_V2.trailerInnerHalfWidth - radius
+    Math.abs(proposed.x) > config.trailerInnerHalfWidth - radius
   ) {
     return 'parede lateral da carroceria'
   }
@@ -331,8 +412,8 @@ export function forkliftCollisionReason(
     if (pallet.id === ignorePalletId || pallet.phase === 'carried') continue
     const point =
       pallet.phase === 'truck'
-        ? truckPalletPoint(pallet.index)
-        : stagingPoint(pallet.stagedSlot ?? pallet.index)
+        ? truckPalletPoint(pallet.index, config)
+        : stagingPoint(pallet.stagedSlot ?? pallet.index, config)
     if (circleHitsPoint(proposed, radius, point, 0.67)) {
       return `pallet ${pallet.id}`
     }
@@ -341,15 +422,20 @@ export function forkliftCollisionReason(
   return null
 }
 
-export function forkliftInsideTrailer(point: Point2): boolean {
+export function forkliftInsideTrailer(
+  point: Point2,
+  config: ReceivingScenarioConfig = RECEIVING_V2,
+): boolean {
   return (
-    point.z > RECEIVING_V2.trailerRearZ &&
-    point.z < RECEIVING_V2.trailerFrontZ &&
-    Math.abs(point.x) < RECEIVING_V2.trailerHalfWidth
+    point.z > config.trailerRearZ &&
+    point.z < config.trailerFrontZ &&
+    Math.abs(point.x) < config.trailerHalfWidth
   )
 }
 
-export function createInitialReceivingState(): ReceivingSimulationState {
+export function createInitialReceivingState(
+  config: ReceivingScenarioConfig = RECEIVING_V2,
+): ReceivingSimulationState {
   return {
     elapsed: 0,
     revision: 0,
@@ -359,37 +445,40 @@ export function createInitialReceivingState(): ReceivingSimulationState {
     fault: null,
     truck: {
       phase: 'arriving',
-      z: RECEIVING_V2.truckSpawnZ,
+      z: config.truckSpawnZ,
     },
     forklift: {
-      position: clonePoint(RECEIVING_V2.forkliftHome),
+      position: clonePoint(config.forkliftHome),
       heading: Math.PI,
       speed: 0,
-      forkHeight: RECEIVING_V2.travelForkHeight,
+      forkHeight: config.travelForkHeight,
       phase: 'parked',
       carryingPalletId: null,
     },
-    pallets: createPallets(1),
+    pallets: createPallets(1, config),
   }
 }
 
 export class ReceivingSimulation {
-  private readonly state = createInitialReceivingState()
+  private readonly state: ReceivingSimulationState
   private readonly queue: SimulationAction[] = []
   private running: RunningAction | null = null
 
-  constructor() {
+  constructor(
+    private readonly config: ReceivingScenarioConfig = RECEIVING_V2,
+  ) {
+    this.state = createInitialReceivingState(config)
     this.queue.push(
       {
         kind: 'truck-move',
-        targetZ: RECEIVING_V2.truckDockZ,
+        targetZ: config.truckDockZ,
         phase: 'arriving',
         label: 'CAMINHÃO 001 ENTRANDO DE RÉ NA DOCA',
       },
       {
         kind: 'wait',
         seconds: 0.35,
-        label: 'CAMINHÃO DOCKADO · CONFERINDO 6 PALLETS',
+        label: `CAMINHÃO DOCKADO · CONFERINDO ${config.palletsPerTruck} PALLETS`,
         truckPhase: 'docked',
       },
       { kind: 'begin-batch' },
@@ -432,38 +521,51 @@ export class ReceivingSimulation {
   }
 
   private enqueueBatchActions(): void {
-    for (let index = 0; index < 6; index += 1) {
-      const pallet = this.state.pallets[index]
-      const source = truckPalletPoint(index)
-      const lane = { x: source.x, z: RECEIVING_V2.pickupLaneZ }
+    const stagedOffset = this.state.pallets.filter(
+      (pallet) => pallet.phase === 'staged',
+    ).length
+    const incoming = this.state.pallets
+      .filter((pallet) => pallet.phase === 'truck')
+      .sort((left, right) => left.index - right.index)
+
+    if (stagedOffset + incoming.length > this.config.stagingCapacity) {
+      this.fail('capacidade temporária do staging atingida')
+      this.state.label =
+        'STAGING TEMPORARIAMENTE CHEIO · AGUARDANDO MOVIMENTAÇÃO INTERNA'
+      return
+    }
+
+    incoming.forEach((pallet, index) => {
+      const source = truckPalletPoint(pallet.index, this.config)
+      const lane = { x: source.x, z: this.config.pickupLaneZ }
       const pickup = { x: source.x, z: source.z - 1.55 }
-      const clear = { x: source.x, z: RECEIVING_V2.truckClearZ }
-      const stage = stagingPoint(index)
+      const clear = { x: source.x, z: this.config.truckClearZ }
+      const stageIndex = stagedOffset + index
+      const stage = stagingPoint(stageIndex, this.config)
       const stageApproach = {
         x: stage.x,
-        z: RECEIVING_V2.stagingApproachZ,
+        z: this.config.stagingApproachZ,
       }
       const stageDrop = { x: stage.x, z: stage.z + 1.55 }
+      const displayIndex = index + 1
 
       this.queue.push(
         {
           kind: 'rotate',
           heading: Math.PI,
           phase: 'aligning',
-          label: `RX20 ALINHANDO PARA O PALLET ${index + 1}/6`,
+          label: `RX20 ALINHANDO PARA O PALLET ${displayIndex}/${incoming.length}`,
         },
         {
           kind: 'move-curve',
-          control1: {
-            x: this.state.forklift.position.x,
-            z: Math.max(this.state.forklift.position.z + 10, 1),
-          },
+          control1: clonePoint(this.state.forklift.position),
           control2: { x: lane.x, z: 13 },
           target: lane,
-          maximumSpeed: RECEIVING_V2.forwardSpeed,
+          maximumSpeed: this.config.forwardSpeed,
           reverse: false,
           phase: 'driving-to-dock',
-          label: `RX20 APROXIMANDO DA DOCA · PALLET ${index + 1}/6`,
+          label: `RX20 APROXIMANDO DA DOCA · PALLET ${displayIndex}/${incoming.length}`,
+          curveRole: 'dock-approach',
         },
         {
           kind: 'rotate',
@@ -473,7 +575,7 @@ export class ReceivingSimulation {
         },
         {
           kind: 'fork',
-          height: RECEIVING_V2.insertionForkHeight,
+          height: this.config.insertionForkHeight,
           phase: 'aligning',
           label: 'AJUSTANDO ALTURA DOS GARFOS',
         },
@@ -490,15 +592,15 @@ export class ReceivingSimulation {
         {
           kind: 'wait',
           seconds: 0.2,
-          label: `GARFOS POSICIONADOS SOB O PALLET ${index + 1}`,
+          label: `GARFOS POSICIONADOS SOB O PALLET ${displayIndex}`,
           phase: 'picking',
         },
-        { kind: 'attach', palletIndex: index },
+        { kind: 'attach', palletId: pallet.id },
         {
           kind: 'fork',
-          height: RECEIVING_V2.pickupForkHeight,
+          height: this.config.pickupForkHeight,
           phase: 'picking',
-          label: `PALLET ${index + 1} ELEVADO COM SEGURANÇA`,
+          label: `PALLET ${displayIndex} ELEVADO COM SEGURANÇA`,
         },
         {
           kind: 'wait',
@@ -509,7 +611,7 @@ export class ReceivingSimulation {
         {
           kind: 'move-line',
           target: lane,
-          maximumSpeed: RECEIVING_V2.reverseSpeed,
+          maximumSpeed: this.config.reverseSpeed,
           reverse: true,
           heading: Math.PI,
           phase: 'reversing-out',
@@ -518,7 +620,7 @@ export class ReceivingSimulation {
         {
           kind: 'move-line',
           target: clear,
-          maximumSpeed: RECEIVING_V2.reverseSpeed,
+          maximumSpeed: this.config.reverseSpeed,
           reverse: true,
           heading: Math.PI,
           phase: 'clearing-trailer',
@@ -535,10 +637,10 @@ export class ReceivingSimulation {
           control1: { x: clear.x, z: 8 },
           control2: { x: stageApproach.x, z: -2 },
           target: stageApproach,
-          maximumSpeed: RECEIVING_V2.loadedSpeed,
+          maximumSpeed: this.config.loadedSpeed,
           reverse: false,
           phase: 'transporting',
-          label: `TRANSPORTANDO PARA A POSIÇÃO D${index + 1}`,
+          label: `TRANSPORTANDO PARA A POSIÇÃO D${stageIndex + 1}`,
         },
         {
           kind: 'move-line',
@@ -547,25 +649,25 @@ export class ReceivingSimulation {
           reverse: false,
           heading: 0,
           phase: 'staging',
-          label: `APROXIMAÇÃO FINAL DA POSIÇÃO D${index + 1}`,
+          label: `APROXIMAÇÃO FINAL DA POSIÇÃO D${stageIndex + 1}`,
         },
         {
           kind: 'fork',
-          height: RECEIVING_V2.insertionForkHeight,
+          height: this.config.insertionForkHeight,
           phase: 'staging',
-          label: `BAIXANDO PALLET NA POSIÇÃO D${index + 1}`,
+          label: `BAIXANDO PALLET NA POSIÇÃO D${stageIndex + 1}`,
         },
-        { kind: 'detach', palletIndex: index, stageIndex: index },
+        { kind: 'detach', palletId: pallet.id, stageIndex },
         {
           kind: 'wait',
           seconds: 0.24,
-          label: `PALLET ${index + 1} CONFIRMADO NO STAGING`,
+          label: `PALLET ${displayIndex} CONFIRMADO NO STAGING`,
           phase: 'staging',
         },
         {
           kind: 'move-line',
           target: stageApproach,
-          maximumSpeed: RECEIVING_V2.reverseSpeed,
+          maximumSpeed: this.config.reverseSpeed,
           reverse: true,
           heading: 0,
           phase: 'staging',
@@ -573,27 +675,28 @@ export class ReceivingSimulation {
         },
         {
           kind: 'fork',
-          height: RECEIVING_V2.travelForkHeight,
+          height: this.config.travelForkHeight,
           phase: 'returning',
           label:
-            index === 5
-              ? 'SEIS PALLETS DESCARREGADOS'
+            index === incoming.length - 1
+              ? `${incoming.length} PALLETS DESCARREGADOS`
               : 'GARFOS EM POSIÇÃO DE DESLOCAMENTO',
         },
       )
-    }
+    })
 
-    const home = RECEIVING_V2.forkliftHome
+    const home = this.config.forkliftHome
     this.queue.push(
       {
         kind: 'move-curve',
         control1: { x: 15, z: -23 },
         control2: { x: -12, z: -25 },
         target: home,
-        maximumSpeed: RECEIVING_V2.forwardSpeed,
+        maximumSpeed: this.config.forwardSpeed,
         reverse: false,
         phase: 'returning',
         label: 'RX20 RETORNANDO À VAGA ANTES DE LIBERAR O CAMINHÃO',
+        curveRole: 'return-home',
       },
       {
         kind: 'wait',
@@ -603,22 +706,22 @@ export class ReceivingSimulation {
       },
       {
         kind: 'truck-move',
-        targetZ: RECEIVING_V2.truckSpawnZ,
+        targetZ: this.config.truckSpawnZ,
         phase: 'departing',
         label: 'CAMINHÃO VAZIO SAINDO DA DOCA',
       },
       {
         kind: 'wait',
-        seconds: RECEIVING_V2.gapSeconds,
-        label: 'DOCA VAZIA · PRÓXIMO CAMINHÃO EM 1 SEGUNDO',
+        seconds: this.config.gapSeconds,
+        label: `DOCA VAZIA · PRÓXIMO CAMINHÃO EM ${this.config.gapSeconds} SEGUNDO`,
         truckPhase: 'gap',
       },
       { kind: 'reset-batch' },
       {
         kind: 'truck-move',
-        targetZ: RECEIVING_V2.truckDockZ,
+        targetZ: this.config.truckDockZ,
         phase: 'arriving',
-        label: 'NOVO CAMINHÃO CHEGANDO COM MAIS 6 PALLETS',
+        label: `NOVO CAMINHÃO CHEGANDO COM MAIS ${this.config.palletsPerTruck} PALLETS`,
       },
       {
         kind: 'wait',
@@ -630,22 +733,47 @@ export class ReceivingSimulation {
     )
   }
 
+  private resolveCurve(action: MoveCurveAction): MoveCurveAction {
+    const current = this.state.forklift.position
+    if (
+      action.curveRole === 'dock-approach' &&
+      this.config.resolveDockApproachControl
+    ) {
+      return {
+        ...action,
+        control1: this.config.resolveDockApproachControl(current),
+      }
+    }
+    if (
+      action.curveRole === 'return-home' &&
+      this.config.resolveReturnHomeCurve
+    ) {
+      return {
+        ...action,
+        ...this.config.resolveReturnHomeCurve(current),
+      }
+    }
+    return action
+  }
+
   private beginAction(action: SimulationAction): void {
+    const effectiveAction =
+      action.kind === 'move-curve' ? this.resolveCurve(action) : action
     let duration = 0
     let curveLength = 0
-    if (action.kind === 'move-curve') {
+    if (effectiveAction.kind === 'move-curve') {
       curveLength = approximateCurveLength(
         this.state.forklift.position,
-        action.control1,
-        action.control2,
-        action.target,
+        effectiveAction.control1,
+        effectiveAction.control2,
+        effectiveAction.target,
       )
-      duration = Math.max(0.2, curveLength / action.maximumSpeed)
+      duration = Math.max(0.2, curveLength / effectiveAction.maximumSpeed)
     }
-    if (action.kind === 'wait') duration = action.seconds
+    if (effectiveAction.kind === 'wait') duration = effectiveAction.seconds
 
     this.running = {
-      action,
+      action: effectiveAction,
       elapsed: 0,
       duration,
       startPosition: clonePoint(this.state.forklift.position),
@@ -653,14 +781,24 @@ export class ReceivingSimulation {
       curveLength,
     }
 
-    if (action.kind === 'move-line' || action.kind === 'move-curve') {
-      this.transition(action.label, action.phase)
-    } else if (action.kind === 'rotate' || action.kind === 'fork') {
-      this.transition(action.label, action.phase)
-    } else if (action.kind === 'wait') {
-      this.transition(action.label, action.phase, action.truckPhase)
-    } else if (action.kind === 'truck-move') {
-      this.transition(action.label, undefined, action.phase)
+    if (
+      effectiveAction.kind === 'move-line' ||
+      effectiveAction.kind === 'move-curve'
+    ) {
+      this.transition(effectiveAction.label, effectiveAction.phase)
+    } else if (
+      effectiveAction.kind === 'rotate' ||
+      effectiveAction.kind === 'fork'
+    ) {
+      this.transition(effectiveAction.label, effectiveAction.phase)
+    } else if (effectiveAction.kind === 'wait') {
+      this.transition(
+        effectiveAction.label,
+        effectiveAction.phase,
+        effectiveAction.truckPhase,
+      )
+    } else if (effectiveAction.kind === 'truck-move') {
+      this.transition(effectiveAction.label, undefined, effectiveAction.phase)
     }
   }
 
@@ -668,16 +806,28 @@ export class ReceivingSimulation {
     this.running = null
   }
 
+  private findPallet(palletId: string): ReceivingPallet | undefined {
+    return this.state.pallets.find((pallet) => pallet.id === palletId)
+  }
+
   private processImmediate(action: SimulationAction): boolean {
     if (action.kind === 'attach') {
-      const pallet = this.state.pallets[action.palletIndex]
+      const pallet = this.findPallet(action.palletId)
+      if (!pallet) {
+        this.fail(`pallet inexistente ${action.palletId}`)
+        return true
+      }
       pallet.phase = 'carried'
       this.state.forklift.carryingPalletId = pallet.id
       this.state.revision += 1
       return true
     }
     if (action.kind === 'detach') {
-      const pallet = this.state.pallets[action.palletIndex]
+      const pallet = this.findPallet(action.palletId)
+      if (!pallet) {
+        this.fail(`pallet inexistente ${action.palletId}`)
+        return true
+      }
       pallet.phase = 'staged'
       pallet.stagedSlot = action.stageIndex
       this.state.forklift.carryingPalletId = null
@@ -695,19 +845,27 @@ export class ReceivingSimulation {
       return true
     }
     if (action.kind === 'reset-batch') {
+      const stagedPallets = this.config.preserveStagedPallets
+        ? this.state.pallets
+            .filter((pallet) => pallet.phase === 'staged')
+            .map((pallet) => ({ ...pallet }))
+        : []
       this.state.completedTrucks += 1
       this.state.batch += 1
-      this.state.pallets = createPallets(this.state.batch)
-      this.state.truck.z = RECEIVING_V2.truckSpawnZ
+      this.state.pallets = [
+        ...createPallets(this.state.batch, this.config),
+        ...stagedPallets,
+      ]
+      this.state.truck.z = this.config.truckSpawnZ
       this.state.truck.phase = 'gap'
-      this.state.forklift.position = clonePoint(RECEIVING_V2.forkliftHome)
+      this.state.forklift.position = clonePoint(this.config.forkliftHome)
       this.state.forklift.heading = Math.PI
       this.state.forklift.speed = 0
-      this.state.forklift.forkHeight = RECEIVING_V2.travelForkHeight
+      this.state.forklift.forkHeight = this.config.travelForkHeight
       this.state.forklift.phase = 'parked'
       this.state.forklift.carryingPalletId = null
       this.transition(
-        `LOTE ${String(this.state.batch).padStart(3, '0')} CRIADO COM 6 PALLETS`,
+        `LOTE ${String(this.state.batch).padStart(3, '0')} CRIADO COM ${this.config.palletsPerTruck} PALLETS`,
         'parked',
         'gap',
       )
@@ -726,15 +884,18 @@ export class ReceivingSimulation {
     }
 
     const brakingSpeed = Math.sqrt(
-      Math.max(0, 2 * RECEIVING_V2.braking * remaining),
+      Math.max(0, 2 * this.config.braking * remaining),
     )
     const desired = Math.min(action.maximumSpeed, brakingSpeed)
     this.state.forklift.speed = approach(
       this.state.forklift.speed,
       desired,
-      RECEIVING_V2.acceleration * delta,
+      this.config.acceleration * delta,
     )
-    const step = Math.min(remaining, Math.max(0.08, this.state.forklift.speed) * delta)
+    const step = Math.min(
+      remaining,
+      Math.max(0.08, this.state.forklift.speed) * delta,
+    )
     const proposed = {
       x: position.x + ((action.target.x - position.x) / remaining) * step,
       z: position.z + ((action.target.z - position.z) / remaining) * step,
@@ -743,6 +904,7 @@ export class ReceivingSimulation {
       this.state,
       proposed,
       action.ignorePalletId,
+      this.config,
     )
     if (collision) {
       this.fail(collision)
@@ -753,7 +915,11 @@ export class ReceivingSimulation {
     return step >= remaining - 0.001
   }
 
-  private advanceCurve(running: RunningAction, action: MoveCurveAction, delta: number): boolean {
+  private advanceCurve(
+    running: RunningAction,
+    action: MoveCurveAction,
+    delta: number,
+  ): boolean {
     running.elapsed = Math.min(running.duration, running.elapsed + delta)
     const raw = running.duration <= 0 ? 1 : running.elapsed / running.duration
     const t = raw * raw * (3 - 2 * raw)
@@ -764,7 +930,12 @@ export class ReceivingSimulation {
       action.target,
       t,
     )
-    const collision = forkliftCollisionReason(this.state, proposed)
+    const collision = forkliftCollisionReason(
+      this.state,
+      proposed,
+      undefined,
+      this.config,
+    )
     if (collision) {
       this.fail(collision)
       return false
@@ -815,8 +986,10 @@ export class ReceivingSimulation {
     } else if (action.kind === 'move-curve') {
       completed = this.advanceCurve(running, action, delta)
     } else if (action.kind === 'rotate') {
-      const difference = normalizeAngle(action.heading - this.state.forklift.heading)
-      const step = RECEIVING_V2.angularSpeed * delta
+      const difference = normalizeAngle(
+        action.heading - this.state.forklift.heading,
+      )
+      const step = this.config.angularSpeed * delta
       if (Math.abs(difference) <= step) {
         this.state.forklift.heading = normalizeAngle(action.heading)
         completed = true
@@ -840,7 +1013,7 @@ export class ReceivingSimulation {
       completed = running.elapsed >= action.seconds
     } else if (action.kind === 'truck-move') {
       const difference = action.targetZ - this.state.truck.z
-      const step = Math.sign(difference) * RECEIVING_V2.truckSpeed * delta
+      const step = Math.sign(difference) * this.config.truckSpeed * delta
       if (Math.abs(difference) <= Math.abs(step)) {
         this.state.truck.z = action.targetZ
         completed = true
