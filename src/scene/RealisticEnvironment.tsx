@@ -1,9 +1,7 @@
 import type { WarehouseLayout } from '../domain/layout'
-import '../realistic-v2/compactStagingLayout'
-import '../realistic-v2/receivingPathRefinement'
+import '../realistic-v2/growingReceivingOperation'
 import type { WarehouseLocation } from '../domain/warehouse'
-import { CompactStagingLaneOverlay } from './CompactStagingLaneOverlay'
-import { RealisticWorldV2 } from './RealisticWorldV2'
+import { RealisticWorldV3 } from './RealisticWorldV3'
 
 interface RealisticEnvironmentProps {
   layout: WarehouseLayout
@@ -13,19 +11,13 @@ interface RealisticEnvironmentProps {
 }
 
 /**
- * O modo realista agora é um produto independente.
+ * O modo realista é um produto independente do operacional.
  *
- * `layout`, `locations` e `animated` continuam na assinatura para manter a API
- * pública da cena estável, porém nenhuma regra, dimensão, câmera, equipamento ou
- * inventário do modo operacional é reutilizado pela Realistic V2.
+ * A V3 nasce com estoque vazio, cinco ruas sem pallets e uma célula de
+ * recebimento que acumula os pallets no staging conforme os caminhões chegam.
  */
 export function RealisticEnvironment({
   compact,
 }: RealisticEnvironmentProps) {
-  return (
-    <>
-      <RealisticWorldV2 compact={compact} />
-      <CompactStagingLaneOverlay />
-    </>
-  )
+  return <RealisticWorldV3 compact={compact} />
 }
