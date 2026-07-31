@@ -1,4 +1,5 @@
 import { Html } from '@react-three/drei'
+import type { CSSProperties } from 'react'
 import type { KernelEvent, KernelTelemetry } from '../realistic/core/livingWorldKernel'
 import type { ReceivingSimulationState } from '../realistic-v2/receivingSimulation'
 
@@ -53,7 +54,7 @@ function eventLabel(event: KernelEvent): string {
   return event.type.replaceAll('.', ' · ')
 }
 
-function buttonStyle(active = false): React.CSSProperties {
+function buttonStyle(active = false): CSSProperties {
   return {
     border: `1px solid ${active ? '#22d3ee' : '#475569'}`,
     borderRadius: 8,
