@@ -51,7 +51,9 @@ function configureInstance(
   if (color) mesh.setColorAt(index, color)
 }
 
-function isOriginalStaticRackLoad(object: THREE.Object3D): boolean {
+function isOriginalStaticRackLoad(
+  object: THREE.Object3D,
+): object is THREE.InstancedMesh {
   if (!(object instanceof THREE.InstancedMesh)) return false
   if (object.name.startsWith('outbound-pilot-')) return false
   const material = Array.isArray(object.material)
