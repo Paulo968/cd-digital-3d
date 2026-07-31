@@ -4,6 +4,7 @@ import type { RealisticFleetPlan } from '../domain/realisticFleet'
 import { buildStableFleetPlan } from '../domain/stableFleet'
 import type { WarehouseLocation } from '../domain/warehouse'
 import { MiniWmsFleetOperation } from './MiniWmsFleetOperation'
+import { MiniWmsTruckCycleController } from './MiniWmsTruckCycleController'
 import { TrafficFlowMarkers } from './TrafficFlowMarkers'
 
 interface FleetOperationProps {
@@ -27,6 +28,7 @@ export function FleetOperation({
 
   return (
     <>
+      <MiniWmsTruckCycleController />
       <TrafficFlowMarkers layout={layout} compact={compact} />
       <MiniWmsFleetOperation
         layout={layout}
