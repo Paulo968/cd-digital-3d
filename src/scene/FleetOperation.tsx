@@ -22,11 +22,15 @@ interface FleetOperationProps {
  */
 export function FleetOperation({
   layout,
+  locations,
   plan,
   compact,
 }: FleetOperationProps) {
   const truckPhase = useOperationsControlStore((state) => state.truck.phase)
-  const outboundPlan = useMemo(() => buildStableFleetPlan(plan), [plan])
+  const outboundPlan = useMemo(
+    () => buildStableFleetPlan(plan, layout, locations),
+    [layout, locations, plan],
+  )
 
   const dispatchPlan = useMemo(() => ({ ...outboundPlan }), [outboundPlan])
   const dispatchVehicles = useMemo(() => {
