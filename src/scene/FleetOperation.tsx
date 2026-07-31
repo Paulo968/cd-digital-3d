@@ -3,12 +3,13 @@ import type { WarehouseLayout } from '../domain/layout'
 import type { RealisticFleetPlan } from '../domain/realisticFleet'
 import { buildStableFleetPlan } from '../domain/stableFleet'
 import type { WarehouseLocation } from '../domain/warehouse'
-import { useInboundTruckStore } from '../store/inboundTruckStore'
 import { useOperationsControlStore } from '../store/operationsControlStore'
 import { MiniWmsFleetOperation } from './MiniWmsFleetOperation'
 import { MiniWmsHomeZones } from './MiniWmsHomeZones'
-import { MiniWmsInboundTruckCycleController } from './MiniWmsInboundTruckCycleController'
+import { MiniWmsPalletVisibilityBridge } from './MiniWmsPalletVisibilityBridge'
 import { MiniWmsTruckCycleController } from './MiniWmsTruckCycleController'
+import { OutboundPilotRackLayer } from './OutboundPilotRackLayer'
+import { PalletCollisionRegistry } from './PalletCollisionRegistry'
 import { TrafficFlowMarkers } from './TrafficFlowMarkers'
 
 interface FleetOperationProps {
@@ -19,39 +20,36 @@ interface FleetOperationProps {
 }
 
 /**
- * Executa duas cadeias Mini-WMS determinísticas com seis equipamentos:
- * recebimento, transferência de entrada, armazenagem, retirada, transferência
- * de saída e carregamento. Cada veículo possui uma vaga física exclusiva.
+ * Piloto de expedição com três equipamentos e uma única cadeia:
+ * retrátil de retirada → transpaleteira de saída → RX20 de carregamento.
  */
 export function FleetOperation({
   layout,
+  locations,
   plan,
   compact,
 }: FleetOperationProps) {
-  const outboundTruckPhase = useOperationsControlStore(
-    (state) => state.truck.phase,
+  const truckPhase = useOperationsControlStore((state) => state.truck.phase)
+  const outboundPlan = useMemo(
+    () => buildStableFleetPlan(plan, layout, locations),
+    [layout, locations, plan],
   )
-  const inboundTruckPhase = useInboundTruckStore((state) => state.phase)
-  const stablePlan = useMemo(() => buildStableFleetPlan(plan), [plan])
 
-  // O executor mantém estado local por ciclo e reiniciaria tudo se recebesse um
-  // novo objeto de plano. Mantemos a identidade do plano estável, alterando
-  // somente a referência da lista de equipamentos quando uma doca muda de fase.
-  // Isso desperta o despacho sem reposicionar pallets ou veículos.
-  const dispatchPlan = useMemo(() => ({ ...stablePlan }), [stablePlan])
+  const dispatchPlan = useMemo(() => ({ ...outboundPlan }), [outboundPlan])
   const dispatchVehicles = useMemo(() => {
-    void inboundTruckPhase
-    void outboundTruckPhase
-    return [...stablePlan.vehicles]
-  }, [inboundTruckPhase, outboundTruckPhase, stablePlan])
+    void truckPhase
+    return [...outboundPlan.vehicles]
+  }, [outboundPlan, truckPhase])
   dispatchPlan.vehicles = dispatchVehicles
 
   return (
     <>
-      <MiniWmsInboundTruckCycleController />
       <MiniWmsTruckCycleController />
+      <MiniWmsPalletVisibilityBridge plan={dispatchPlan} />
+      <PalletCollisionRegistry plan={dispatchPlan} />
+      <OutboundPilotRackLayer layout={layout} locations={locations} />
       <TrafficFlowMarkers layout={layout} compact={compact} />
-      <MiniWmsHomeZones vehicles={stablePlan.vehicles} />
+      <MiniWmsHomeZones vehicles={outboundPlan.vehicles} />
       <MiniWmsFleetOperation
         layout={layout}
         plan={dispatchPlan}

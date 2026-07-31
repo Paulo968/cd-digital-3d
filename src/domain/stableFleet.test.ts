@@ -2,45 +2,78 @@ import { describe, expect, it } from 'vitest'
 import { buildIndustrialFlowPlan } from './industrialFlow'
 import { DEFAULT_WAREHOUSE_LAYOUT } from './layout'
 import { buildStableFleetPlan } from './stableFleet'
-import { generateWarehouseSkeleton } from './warehouse'
+import { generateDemoWarehouse } from './warehouse'
 
 function stablePlan() {
   const layout = DEFAULT_WAREHOUSE_LAYOUT
-  const locations = generateWarehouseSkeleton(layout)
-  return buildStableFleetPlan(
-    buildIndustrialFlowPlan(
-      layout,
-      locations,
-      { frontZ: 30, receivingX: -17, shippingX: 17 },
-      false,
-    ),
+  const locations = generateDemoWarehouse(layout)
+  const base = buildIndustrialFlowPlan(
+    layout,
+    locations,
+    { frontZ: 49.5, receivingX: -31, shippingX: 31 },
+    false,
   )
+  return {
+    stable: buildStableFleetPlan(base, layout, locations),
+    locations,
+  }
 }
 
 describe('buildStableFleetPlan', () => {
-  it('cria seis equipamentos com funções operacionais exclusivas', () => {
-    const stable = stablePlan()
+  it('mantém somente os três equipamentos da expedição', () => {
+    const { stable } = stablePlan()
 
     expect(stable.vehicles.map((vehicle) => vehicle.id)).toEqual([
-      'RX-REC',
-      'TP-IN',
-      'REACH-PUT',
       'REACH-PICK',
       'TP-OUT',
       'RX-LOAD',
     ])
     expect(stable.vehicles.map((vehicle) => vehicle.roles)).toEqual([
-      ['inbound-transfer'],
-      ['inbound-transfer'],
-      ['putaway'],
       ['replenishment'],
       ['replenishment'],
       ['shipping'],
     ])
   })
 
-  it('mantém vários pallets em filas completas de três etapas', () => {
-    const stable = stablePlan()
+  it('remove completamente as missões de recebimento e armazenagem', () => {
+    const { stable } = stablePlan()
+
+    expect(stable.missions.length).toBeGreaterThan(0)
+    expect(
+      stable.missions.every(
+        (mission) =>
+          mission.role === 'replenishment' || mission.role === 'shipping',
+      ),
+    ).toBe(true)
+    expect(
+      stable.missions.some(
+        (mission) =>
+          mission.source.id.startsWith('inbound-truck:') ||
+          mission.destination.id.startsWith('receiving:'),
+      ),
+    ).toBe(false)
+  })
+
+  it('coloca todo endereço ocupado e não bloqueado na fila móvel', () => {
+    const { stable, locations } = stablePlan()
+    const movableAddresses = locations
+      .filter(
+        (location) =>
+          location.quantity > 0 && location.status !== 'blocked',
+      )
+      .map((location) => location.address)
+      .sort()
+    const plannedAddresses = stable.missions
+      .filter((mission) => mission.source.kind === 'address')
+      .map((mission) => mission.source.address)
+      .filter((address): address is string => Boolean(address))
+      .sort()
+
+    expect(plannedAddresses).toEqual(movableAddresses)
+  })
+
+  it('mantém cada pallet em uma cadeia retrátil, TP e RX20', () => {
+    const { stable } = stablePlan()
     const groups = new Map<string, typeof stable.missions>()
 
     stable.missions.forEach((mission) => {
@@ -49,54 +82,22 @@ describe('buildStableFleetPlan', () => {
       groups.set(mission.palletId, group)
     })
 
-    expect(groups.size).toBeGreaterThanOrEqual(2)
-    expect(groups.size).toBeLessThanOrEqual(6)
+    expect(groups.size).toBeGreaterThan(0)
     ;[...groups.values()].forEach((missions) => {
       expect(missions).toHaveLength(3)
-      const roles = missions.map((mission) => mission.role)
-      const inbound = [
-        'inbound-transfer',
-        'inbound-transfer',
-        'putaway',
-      ]
-      const outbound = ['replenishment', 'replenishment', 'shipping']
-      const matchesKnownFlow =
-        JSON.stringify(roles) === JSON.stringify(inbound) ||
-        JSON.stringify(roles) === JSON.stringify(outbound)
-      expect(matchesKnownFlow).toBe(true)
+      expect(missions.map((mission) => mission.role)).toEqual([
+        'replenishment',
+        'replenishment',
+        'shipping',
+      ])
+      expect(missions[0].source.kind).toBe('address')
+      expect(missions[1].eligibleKinds).toEqual(['pallet-jack'])
+      expect(missions[2].destination.kind).toBe('truck')
     })
   })
 
-  it('coloca recebimento e expedição em lados opostos', () => {
-    const stable = stablePlan()
-    const byId = Object.fromEntries(
-      stable.vehicles.map((vehicle) => [vehicle.id, vehicle]),
-    )
-
-    expect(byId['RX-REC'].startPoint.x).toBeLessThan(
-      byId['RX-LOAD'].startPoint.x,
-    )
-    expect(byId['REACH-PUT'].startPoint.x).toBeLessThan(
-      byId['REACH-PICK'].startPoint.x,
-    )
-    expect(byId['TP-IN'].startPoint.x).toBeLessThan(
-      byId['TP-OUT'].startPoint.x,
-    )
-
-    const inboundTpFromRx = Math.hypot(
-      byId['TP-IN'].startPoint.x - byId['RX-REC'].startPoint.x,
-      byId['TP-IN'].startPoint.z - byId['RX-REC'].startPoint.z,
-    )
-    const outboundTpFromRx = Math.hypot(
-      byId['TP-OUT'].startPoint.x - byId['RX-LOAD'].startPoint.x,
-      byId['TP-OUT'].startPoint.z - byId['RX-LOAD'].startPoint.z,
-    )
-    expect(inboundTpFromRx).toBeGreaterThan(5)
-    expect(outboundTpFromRx).toBeGreaterThan(5)
-  })
-
-  it('não posiciona dois equipamentos na mesma vaga de espera', () => {
-    const stable = stablePlan()
+  it('separa as três vagas para criar uma área real de manobra', () => {
+    const { stable } = stablePlan()
 
     stable.vehicles.forEach((vehicle, index) => {
       stable.vehicles.slice(index + 1).forEach((other) => {
@@ -104,7 +105,7 @@ describe('buildStableFleetPlan', () => {
           vehicle.startPoint.x - other.startPoint.x,
           vehicle.startPoint.z - other.startPoint.z,
         )
-        expect(distance).toBeGreaterThan(2.5)
+        expect(distance).toBeGreaterThan(7)
       })
     })
   })

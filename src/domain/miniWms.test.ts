@@ -8,8 +8,10 @@ import type { RealisticMissionStop } from './realisticMissionQueue'
 import {
   chooseMiniWmsMissionForVehicle,
   createMiniWmsCycle,
+  MINI_WMS_PALLETS_PER_WAVE,
   miniWmsEquipmentClass,
   miniWmsEquipmentDuty,
+  miniWmsWaveCount,
   truckAllowsMiniWmsMission,
   vehicleCanExecuteMiniWmsMission,
 } from './miniWms'
@@ -191,6 +193,41 @@ describe('mini WMS', () => {
     const second = createMiniWmsCycle(plan, 2)
 
     expect(first.missions[0].id).not.toBe(second.missions[0].id)
+    expect(first.missions[0].palletId).not.toBe(second.missions[0].palletId)
+  })
+
+  it('materializa no máximo seis pallets e avança para a onda seguinte', () => {
+    const missions = Array.from(
+      { length: MINI_WMS_PALLETS_PER_WAVE + 2 },
+      (_, index) =>
+        mission({
+          id: `wave-${index + 1}`,
+          role: 'shipping',
+          source: stop(`shipping-buffer:${index + 1}`, 'receiving'),
+          destination: stop(`truck:${index + 1}`, 'truck'),
+          eligibleKinds: ['forklift'],
+          sequence: index + 1,
+        }),
+    )
+    const plan: RealisticFleetPlan = {
+      vehicles: [equipment[5]],
+      missions,
+      initialPalletStops: Object.fromEntries(
+        missions.map((item) => [item.palletId, item.source]),
+      ),
+      receivingStops: [],
+      stagingStops: [],
+      truckStops: [],
+    }
+
+    const first = createMiniWmsCycle(plan, 1)
+    const second = createMiniWmsCycle(plan, 2)
+
+    expect(miniWmsWaveCount(plan)).toBe(2)
+    expect(new Set(first.missions.map((item) => item.palletId)).size).toBe(
+      MINI_WMS_PALLETS_PER_WAVE,
+    )
+    expect(new Set(second.missions.map((item) => item.palletId)).size).toBe(2)
     expect(first.missions[0].palletId).not.toBe(second.missions[0].palletId)
   })
 })

@@ -34,6 +34,8 @@ export interface MiniWmsCycle {
   palletColors: Record<string, string>
 }
 
+export const MINI_WMS_PALLETS_PER_WAVE = 6
+
 const STAGE_ORDER: Record<MiniWmsMissionStage, number> = {
   'unload-truck': 0,
   retrieve: 0,
@@ -210,15 +212,54 @@ export function miniWmsAssignmentReason(
   return `${miniWmsVehicleBadge(vehicle)} autorizada para ${action[stage]}. ${mission.source.label} → ${mission.destination.label}.`
 }
 
+function orderedPalletGroups(plan: RealisticFleetPlan): string[][] {
+  const groups = new Map<string, FleetMission[]>()
+  plan.missions.forEach((mission) => {
+    const current = groups.get(mission.palletId) ?? []
+    current.push(mission)
+    groups.set(mission.palletId, current)
+  })
+
+  const palletIds = [...groups.entries()]
+    .sort((left, right) => {
+      const leftSequence = Math.min(...left[1].map((mission) => mission.sequence))
+      const rightSequence = Math.min(...right[1].map((mission) => mission.sequence))
+      return leftSequence - rightSequence || left[0].localeCompare(right[0])
+    })
+    .map(([palletId]) => palletId)
+
+  const waves: string[][] = []
+  for (
+    let index = 0;
+    index < palletIds.length;
+    index += MINI_WMS_PALLETS_PER_WAVE
+  ) {
+    waves.push(palletIds.slice(index, index + MINI_WMS_PALLETS_PER_WAVE))
+  }
+  return waves
+}
+
+export function miniWmsWaveCount(plan: RealisticFleetPlan): number {
+  return Math.max(1, orderedPalletGroups(plan).length)
+}
+
 /**
- * Clona as missões para um novo ciclo sem reaproveitar IDs de telemetria.
- * Os pallets também recebem um sufixo de ciclo; assim o painel operacional e o
- * registro de obstáculos nunca confundem uma carga antiga com a nova rodada.
+ * Clona somente uma onda de pallets por ciclo sem reaproveitar IDs de
+ * telemetria. Todas as posições ocupadas permanecem elegíveis no plano, mas no
+ * máximo seis pallets são materializados ao mesmo tempo. Isso mantém a operação
+ * clara e evita sobrecarga no celular.
  */
 export function createMiniWmsCycle(
   plan: RealisticFleetPlan,
   cycle: number,
 ): MiniWmsCycle {
+  const waves = orderedPalletGroups(plan)
+  const selectedBasePalletIds = new Set(
+    waves.length > 0 ? waves[(Math.max(1, cycle) - 1) % waves.length] : [],
+  )
+  const selectedMissions = plan.missions.filter((mission) =>
+    selectedBasePalletIds.has(mission.palletId),
+  )
   const palletIdMap = new Map<string, string>()
   const cycleSuffix = `C${String(cycle).padStart(2, '0')}`
 
@@ -230,16 +271,15 @@ export function createMiniWmsCycle(
     return next
   }
 
-  const missions = plan.missions.map((mission) => ({
+  const missions = selectedMissions.map((mission) => ({
     ...mission,
     id: `${mission.id}-${cycleSuffix}`,
     palletId: cyclePalletId(mission.palletId),
   }))
   const initialPalletStops = Object.fromEntries(
-    Object.entries(plan.initialPalletStops).map(([palletId, stop]) => [
-      cyclePalletId(palletId),
-      stop,
-    ]),
+    Object.entries(plan.initialPalletStops)
+      .filter(([palletId]) => selectedBasePalletIds.has(palletId))
+      .map(([palletId, stop]) => [cyclePalletId(palletId), stop]),
   )
   const palletColors = Object.fromEntries(
     missions.map((mission) => [mission.palletId, mission.color]),

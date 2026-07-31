@@ -15,22 +15,41 @@ import {
   upsertRuntimeHazard,
 } from './dynamicSafetyRuntime'
 
+function basePalletId(palletId: string): string {
+  return palletId.replace(/-C\d+$/, '')
+}
+
+function activePalletIds(plan: RealisticFleetPlan): Set<string> {
+  const groups = new Map<string, Set<string>>()
+  plan.missions.forEach((mission) => {
+    const roles = groups.get(mission.palletId) ?? new Set<string>()
+    roles.add(mission.role)
+    groups.set(mission.palletId, roles)
+  })
+  return new Set(
+    [...groups.entries()]
+      .filter(
+        ([, roles]) => roles.has('replenishment') && roles.has('shipping'),
+      )
+      .map(([palletId]) => palletId),
+  )
+}
+
 function collisionStops(plan: RealisticFleetPlan): RealisticMissionStop[] {
+  const activeIds = activePalletIds(plan)
+  const activeMissions = plan.missions.filter((mission) =>
+    activeIds.has(mission.palletId),
+  )
   const base = [
-    ...Object.values(plan.initialPalletStops),
-    ...plan.receivingStops,
+    ...Object.entries(plan.initialPalletStops)
+      .filter(([palletId]) => activeIds.has(palletId))
+      .map(([, stop]) => stop),
     ...plan.stagingStops,
     ...plan.truckStops,
-    ...plan.missions.flatMap((mission) => [mission.source, mission.destination]),
+    ...activeMissions.flatMap((mission) => [mission.source, mission.destination]),
   ]
   const industrial = industrialPlanIsActive(plan)
-    ? [
-        ...plan.inboundTruckStops,
-        ...plan.dischargeStops,
-        ...plan.aisleBufferStops,
-        ...plan.outboundAisleBufferStops,
-        ...plan.shippingBufferStops,
-      ]
+    ? [...plan.outboundAisleBufferStops, ...plan.shippingBufferStops]
     : []
   const unique = new Map<string, RealisticMissionStop>()
   ;[...base, ...industrial].forEach((stop) => unique.set(stop.id, stop))
@@ -47,6 +66,7 @@ export function PalletCollisionRegistry({
   const activeHazardsRef = useRef<Set<string>>(new Set())
   const observedPalletsRef = useRef<Set<string>>(new Set())
   const departedPalletsRef = useRef<Set<string>>(new Set())
+  const activeIds = useMemo(() => activePalletIds(plan), [plan])
   const lookup = useMemo(() => {
     const result = new Map<string, RealisticMissionStop>()
     collisionStops(plan).forEach((stop) => {
@@ -67,7 +87,11 @@ export function PalletCollisionRegistry({
 
   useEffect(() => {
     const nextHazards = new Set<string>()
-    const initialStopByPallet = plan.initialPalletStops
+    const initialStopByPallet = Object.fromEntries(
+      Object.entries(plan.initialPalletStops).filter(([palletId]) =>
+        activeIds.has(palletId),
+      ),
+    )
 
     observedPalletsRef.current.forEach((palletId) => {
       if (!pallets[palletId]) departedPalletsRef.current.add(palletId)
@@ -79,12 +103,12 @@ export function PalletCollisionRegistry({
 
     const palletIds = new Set([
       ...Object.keys(initialStopByPallet),
-      ...Object.keys(pallets),
+      ...Object.keys(pallets).filter((palletId) =>
+        activeIds.has(basePalletId(palletId)),
+      ),
     ])
 
     palletIds.forEach((palletId) => {
-      // Durante coleta e transporte, o pallet da missão deixa de ser um obstáculo
-      // externo. Pallets já dentro do caminhão também ficam fora da via dinâmica.
       if (palletsInRunningMissions.has(palletId)) return
 
       const tracked = pallets[palletId]
@@ -114,7 +138,7 @@ export function PalletCollisionRegistry({
       if (!nextHazards.has(hazardId)) removeRuntimeHazard(hazardId)
     })
     activeHazardsRef.current = nextHazards
-  }, [lookup, pallets, palletsInRunningMissions, plan.initialPalletStops])
+  }, [activeIds, lookup, pallets, palletsInRunningMissions, plan.initialPalletStops])
 
   useEffect(
     () => () => {
