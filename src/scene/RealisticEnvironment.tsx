@@ -1,7 +1,6 @@
 import type { WarehouseLayout } from '../domain/layout'
-import '../realistic-v2/growingReceivingOperation'
 import type { WarehouseLocation } from '../domain/warehouse'
-import { RealisticWorldV4 } from './RealisticWorldV4'
+import { RealisticReceivingWorld } from './RealisticReceivingWorld'
 
 interface RealisticEnvironmentProps {
   layout: WarehouseLayout
@@ -11,13 +10,15 @@ interface RealisticEnvironmentProps {
 }
 
 /**
- * O modo realista é independente do operacional.
+ * O modo realista permanece isolado do estoque operacional.
  *
- * A V4 nasce com cinco ruas vazias, recebe pallets continuamente e preserva o
- * staging entre caminhões para a futura etapa com transpaleteira.
+ * A primeira célula agora usa um cenário explícito e um motor configurável,
+ * sem alterar prototypes ou constantes globais durante imports. `layout`,
+ * `locations` e `animated` permanecem na assinatura pública para a integração
+ * progressiva com o cérebro industrial e o grafo operacional.
  */
 export function RealisticEnvironment({
   compact,
 }: RealisticEnvironmentProps) {
-  return <RealisticWorldV4 compact={compact} />
+  return <RealisticReceivingWorld compact={compact} />
 }
