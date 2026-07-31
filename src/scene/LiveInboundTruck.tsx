@@ -9,6 +9,7 @@ interface LiveInboundTruckProps {
  * expedição. O componente é mantido para facilitar a retomada dessa fase depois
  * que a cadeia de saída estiver estável.
  */
-export function LiveInboundTruck(_props: LiveInboundTruckProps) {
+export function LiveInboundTruck(props: LiveInboundTruckProps) {
+  void props
   return null
 }
