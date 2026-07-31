@@ -103,6 +103,19 @@ Eventos já publicados pelo recebimento:
 
 Eventos internos incluem registro de sistema, fila e execução de comandos, pausa, retomada, escala de tempo e descarte controlado de atraso.
 
+## Experiência visual conectada
+
+A telemetria do kernel agora aparece no próprio modo Realista:
+
+- velocidade de experiência em 1×, 2×, 4× e 8×;
+- pausa e avanço manual de um tick;
+- tick e tempo simulados;
+- feed dos eventos logísticos recentes;
+- progresso do caminhão atual;
+- câmera cinematográfica, visão geral, acompanhamento da RX20 e câmera da doca.
+
+A cena também ganhou trilha luminosa da RX20, beacon operacional, sinais pulsantes de doca, iluminação industrial e staging visível. Esses recursos não se tornam fonte da verdade; eles apenas representam dados do kernel e do sistema de recebimento.
+
 ## Snapshot e restauração
 
 O checkpoint do kernel preserva:
