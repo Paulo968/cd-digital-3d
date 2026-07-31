@@ -6,6 +6,10 @@ import {
 } from '../domain/dynamicSafety'
 import type { WorldPoint } from '../domain/routePlanning'
 import {
+  resolveVehicleContactMotion,
+  type VehicleContactResolution,
+} from '../domain/vehicleContact'
+import {
   publishOperationVehicleRuntime,
   setOperationVehicleFault,
 } from '../store/operationsControlStore'
@@ -91,8 +95,9 @@ function syncVehicleHazard(state: RuntimeVehicleState): void {
     kind: 'vehicle',
     point: state.point,
     radius: state.radius,
-    // Veículos em missão e avariados bloqueiam. Ociosos aguardam fora da
-    // malha dinâmica até existir um gerenciador de estacionamento dedicado.
+    // O sensor preditivo ignora equipamentos estacionados para não transformar
+    // a vaga em um congestionamento permanente. A barreira física abaixo,
+    // porém, considera todos os corpos registrados, inclusive os ociosos.
     active: state.active || faultedVehicles.has(state.id),
     velocity: state.velocity,
     facing,
@@ -122,6 +127,24 @@ export function readRuntimeVehicleState(
   vehicleId: string,
 ): RuntimeVehicleState | undefined {
   return vehicles.get(vehicleId)
+}
+
+/**
+ * Resolve o movimento final contra todos os equipamentos existentes no mundo,
+ * mesmo que estejam sem missão. Essa camada não decide prioridade: ela apenas
+ * garante a propriedade física de não penetração.
+ */
+export function resolveRuntimeVehicleMotion(input: {
+  vehicleId: string
+  current: WorldPoint
+  proposed: WorldPoint
+  radius: number
+  clearance?: number
+}): VehicleContactResolution {
+  return resolveVehicleContactMotion({
+    ...input,
+    bodies: vehicles.values(),
+  })
 }
 
 export function upsertRuntimeHazard(hazard: DynamicHazard): void {
