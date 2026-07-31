@@ -7,19 +7,21 @@ import { generateDemoWarehouse } from './warehouse'
 function stablePlan() {
   const layout = DEFAULT_WAREHOUSE_LAYOUT
   const locations = generateDemoWarehouse(layout)
-  return buildStableFleetPlan(
-    buildIndustrialFlowPlan(
-      layout,
-      locations,
-      { frontZ: 49.5, receivingX: -31, shippingX: 31 },
-      false,
-    ),
+  const base = buildIndustrialFlowPlan(
+    layout,
+    locations,
+    { frontZ: 49.5, receivingX: -31, shippingX: 31 },
+    false,
   )
+  return {
+    stable: buildStableFleetPlan(base, layout, locations),
+    locations,
+  }
 }
 
 describe('buildStableFleetPlan', () => {
   it('mantém somente os três equipamentos da expedição', () => {
-    const stable = stablePlan()
+    const { stable } = stablePlan()
 
     expect(stable.vehicles.map((vehicle) => vehicle.id)).toEqual([
       'REACH-PICK',
@@ -34,7 +36,7 @@ describe('buildStableFleetPlan', () => {
   })
 
   it('remove completamente as missões de recebimento e armazenagem', () => {
-    const stable = stablePlan()
+    const { stable } = stablePlan()
 
     expect(stable.missions.length).toBeGreaterThan(0)
     expect(
@@ -52,8 +54,26 @@ describe('buildStableFleetPlan', () => {
     ).toBe(false)
   })
 
+  it('coloca todo endereço ocupado e não bloqueado na fila móvel', () => {
+    const { stable, locations } = stablePlan()
+    const movableAddresses = locations
+      .filter(
+        (location) =>
+          location.quantity > 0 && location.status !== 'blocked',
+      )
+      .map((location) => location.address)
+      .sort()
+    const plannedAddresses = stable.missions
+      .filter((mission) => mission.source.kind === 'address')
+      .map((mission) => mission.source.address)
+      .filter((address): address is string => Boolean(address))
+      .sort()
+
+    expect(plannedAddresses).toEqual(movableAddresses)
+  })
+
   it('mantém cada pallet em uma cadeia retrátil, TP e RX20', () => {
-    const stable = stablePlan()
+    const { stable } = stablePlan()
     const groups = new Map<string, typeof stable.missions>()
 
     stable.missions.forEach((mission) => {
@@ -77,7 +97,7 @@ describe('buildStableFleetPlan', () => {
   })
 
   it('separa as três vagas para criar uma área real de manobra', () => {
-    const stable = stablePlan()
+    const { stable } = stablePlan()
 
     stable.vehicles.forEach((vehicle, index) => {
       stable.vehicles.slice(index + 1).forEach((other) => {
