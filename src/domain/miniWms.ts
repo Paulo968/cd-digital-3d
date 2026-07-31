@@ -4,6 +4,7 @@ import type {
   RealisticFleetPlan,
 } from './realisticFleet'
 import type { RealisticMissionStop } from './realisticMissionQueue'
+import { inboundTruckIsDocked } from '../store/inboundTruckStore'
 import { useOperationsControlStore } from '../store/operationsControlStore'
 
 export type MiniWmsEquipmentClass =
@@ -93,9 +94,9 @@ export function miniWmsEquipmentDuty(
 export function miniWmsVehicleBadge(vehicle: FleetVehicleDefinition): string {
   const labels: Record<MiniWmsEquipmentDuty, string> = {
     'receiving-dock': 'RX20 RECEBIMENTO · DESCARGA',
-    'inbound-transfer': 'TP ENTRADA · BUFFER DA RUA',
-    putaway: 'RETRÁTIL ARMAZENAGEM · PUTAWAY',
-    retrieve: 'RETRÁTIL RETIRADA · PICK',
+    'inbound-transfer': 'TP ENTRADA · TRANSFERÊNCIA',
+    putaway: 'RETRÁTIL RECEBIMENTO · ARMAZENAGEM',
+    retrieve: 'RETRÁTIL EXPEDIÇÃO · RETIRADA',
     'outbound-transfer': 'TP SAÍDA · PRÉ-EMBARQUE',
     'shipping-dock': 'RX20 EXPEDIÇÃO · CARGA',
   }
@@ -144,11 +145,19 @@ export function vehicleCanExecuteMiniWmsMission(
   return permittedStage[duty] === stage
 }
 
+/**
+ * Cada doca possui seu próprio ciclo. A RX-REC só entra no caminhão de entrada
+ * quando ele está estacionado; a RX-LOAD segue a mesma regra na expedição.
+ */
 export function truckAllowsMiniWmsMission(
   mission: FleetMission,
-  truckDocked: boolean,
+  outboundTruckDocked: boolean,
+  inboundTruckDocked = true,
 ): boolean {
-  return miniWmsMissionStage(mission) !== 'load-truck' || truckDocked
+  const stage = miniWmsMissionStage(mission)
+  if (stage === 'unload-truck') return inboundTruckDocked
+  if (stage === 'load-truck') return outboundTruckDocked
+  return true
 }
 
 export function chooseMiniWmsMissionForVehicle(input: {
@@ -157,15 +166,20 @@ export function chooseMiniWmsMissionForVehicle(input: {
   reservedMissionIds: Set<string>
   reservedDestinationIds: Set<string>
 }): FleetMission | undefined {
-  const truckDocked =
+  const outboundTruckDocked =
     useOperationsControlStore.getState().truck.phase === 'docked'
+  const inboundDocked = inboundTruckIsDocked()
 
   return input.availableMissions
     .filter(
       (mission) =>
         !input.reservedMissionIds.has(mission.id) &&
         !input.reservedDestinationIds.has(mission.destination.id) &&
-        truckAllowsMiniWmsMission(mission, truckDocked) &&
+        truckAllowsMiniWmsMission(
+          mission,
+          outboundTruckDocked,
+          inboundDocked,
+        ) &&
         vehicleCanExecuteMiniWmsMission(input.vehicle, mission),
     )
     .sort((left, right) => {
@@ -188,9 +202,9 @@ export function miniWmsAssignmentReason(
   const action: Record<MiniWmsMissionStage, string> = {
     'unload-truck': 'descarregar o caminhão no recebimento',
     'inbound-transfer': 'levar o pallet da descarga ao buffer da rua',
-    putaway: 'armazenar o pallet no endereço definido',
-    retrieve: 'retirar o pallet do rack para a expedição',
-    'outbound-transfer': 'levar o pallet do buffer da rua ao pré-embarque',
+    putaway: 'armazenar o pallet no endereço vazio definido',
+    retrieve: 'retirar o pallet solicitado do rack para a expedição',
+    'outbound-transfer': 'levar exatamente esse pallet ao pré-embarque',
     'load-truck': 'carregar o pallet no caminhão de expedição',
   }
   return `${miniWmsVehicleBadge(vehicle)} autorizada para ${action[stage]}. ${mission.source.label} → ${mission.destination.label}.`
