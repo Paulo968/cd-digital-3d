@@ -10,7 +10,6 @@ import {
 } from './realisticFleet'
 import type { RealisticMissionStop } from './realisticMissionQueue'
 import {
-  buildTravelPath,
   getLocationAccessPoint,
   getLocationWorldPoint,
 } from './routePlanning'
@@ -64,30 +63,18 @@ function rackStop(
   }
 }
 
-function missionTrafficCells(
-  layout: WarehouseLayout,
-  source: RealisticMissionStop,
-  destination: RealisticMissionStop,
-): string[] {
-  try {
-    return buildTrafficCells(
-      buildTravelPath(layout, source.access, destination.access, {
-        left: false,
-        right: false,
-      }),
-    )
-  } catch {
-    return buildTrafficCells([source.access, destination.access])
-  }
-}
-
 function mission(
-  layout: WarehouseLayout,
   input: Omit<FleetMission, 'trafficCells'>,
 ): FleetMission {
   return {
     ...input,
-    trafficCells: missionTrafficCells(layout, input.source, input.destination),
+    // A reserva inicial usa uma linha simplificada. A rota real, com cabeceiras,
+    // curvas e ocupação atual, é calculada pelo executor somente quando a missão
+    // entra na onda ativa.
+    trafficCells: buildTrafficCells([
+      input.source.access,
+      input.destination.access,
+    ]),
   }
 }
 
@@ -184,7 +171,7 @@ export function buildOutboundPilotQueue(
     const base = index * 10
 
     missions.push(
-      mission(layout, {
+      mission({
         id: `pilot-retrieve-${location.address}`,
         palletId,
         color,
@@ -195,7 +182,7 @@ export function buildOutboundPilotQueue(
         priority: 0,
         sequence: base + 1,
       }),
-      mission(layout, {
+      mission({
         id: `pilot-transfer-${location.address}`,
         palletId,
         color,
@@ -206,7 +193,7 @@ export function buildOutboundPilotQueue(
         priority: 1,
         sequence: base + 2,
       }),
-      mission(layout, {
+      mission({
         id: `pilot-load-${location.address}`,
         palletId,
         color,
