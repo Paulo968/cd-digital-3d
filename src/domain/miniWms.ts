@@ -11,6 +11,14 @@ export type MiniWmsEquipmentClass =
   | 'reach-truck'
   | 'pallet-jack'
 
+export type MiniWmsEquipmentDuty =
+  | 'receiving-dock'
+  | 'inbound-transfer'
+  | 'putaway'
+  | 'retrieve'
+  | 'outbound-transfer'
+  | 'shipping-dock'
+
 export type MiniWmsMissionStage =
   | 'unload-truck'
   | 'inbound-transfer'
@@ -42,11 +50,56 @@ export function miniWmsEquipmentClass(
   return 'reach-truck'
 }
 
-export function miniWmsVehicleBadge(vehicle: FleetVehicleDefinition): string {
+/**
+ * Define a única função permitida para cada equipamento da célula.
+ * Os IDs são deliberadamente operacionais: mesmo que dois veículos tenham o
+ * mesmo tipo físico, eles não podem disputar a etapa do outro.
+ */
+export function miniWmsEquipmentDuty(
+  vehicle: FleetVehicleDefinition,
+): MiniWmsEquipmentDuty {
+  const id = vehicle.id.toUpperCase()
+  if (id === 'RX-REC') return 'receiving-dock'
+  if (id === 'TP-IN') return 'inbound-transfer'
+  if (id === 'REACH-PUT') return 'putaway'
+  if (id === 'REACH-PICK') return 'retrieve'
+  if (id === 'TP-OUT') return 'outbound-transfer'
+  if (id === 'RX-LOAD') return 'shipping-dock'
+
   const equipment = miniWmsEquipmentClass(vehicle)
-  if (equipment === 'counterbalance') return 'RX 20-20 · DOCAS'
-  if (equipment === 'reach-truck') return 'RETRÁTIL · RUAS'
-  return 'TRANSPALETEIRA · TRANSFERÊNCIA'
+  if (equipment === 'counterbalance') {
+    return vehicle.roles.includes('shipping')
+      ? 'shipping-dock'
+      : 'receiving-dock'
+  }
+  if (equipment === 'reach-truck') {
+    if (
+      vehicle.roles.includes('replenishment') &&
+      !vehicle.roles.includes('putaway')
+    ) {
+      return 'retrieve'
+    }
+    return /(?:PICK|OUT)/i.test(id) ? 'retrieve' : 'putaway'
+  }
+  if (
+    vehicle.roles.includes('replenishment') &&
+    !vehicle.roles.includes('inbound-transfer')
+  ) {
+    return 'outbound-transfer'
+  }
+  return /OUT/i.test(id) ? 'outbound-transfer' : 'inbound-transfer'
+}
+
+export function miniWmsVehicleBadge(vehicle: FleetVehicleDefinition): string {
+  const labels: Record<MiniWmsEquipmentDuty, string> = {
+    'receiving-dock': 'RX20 RECEBIMENTO · DESCARGA',
+    'inbound-transfer': 'TP ENTRADA · BUFFER DA RUA',
+    putaway: 'RETRÁTIL ARMAZENAGEM · PUTAWAY',
+    retrieve: 'RETRÁTIL RETIRADA · PICK',
+    'outbound-transfer': 'TP SAÍDA · PRÉ-EMBARQUE',
+    'shipping-dock': 'RX20 EXPEDIÇÃO · CARGA',
+  }
+  return labels[miniWmsEquipmentDuty(vehicle)]
 }
 
 export function miniWmsMissionStage(
@@ -77,16 +130,18 @@ export function vehicleCanExecuteMiniWmsMission(
   mission: FleetMission,
 ): boolean {
   if (!mission.eligibleKinds.includes(vehicle.kind)) return false
-  const equipment = miniWmsEquipmentClass(vehicle)
+  const duty = miniWmsEquipmentDuty(vehicle)
   const stage = miniWmsMissionStage(mission)
 
-  if (equipment === 'counterbalance') {
-    return stage === 'unload-truck' || stage === 'load-truck'
+  const permittedStage: Record<MiniWmsEquipmentDuty, MiniWmsMissionStage> = {
+    'receiving-dock': 'unload-truck',
+    'inbound-transfer': 'inbound-transfer',
+    putaway: 'putaway',
+    retrieve: 'retrieve',
+    'outbound-transfer': 'outbound-transfer',
+    'shipping-dock': 'load-truck',
   }
-  if (equipment === 'reach-truck') {
-    return stage === 'putaway' || stage === 'retrieve'
-  }
-  return stage === 'inbound-transfer' || stage === 'outbound-transfer'
+  return permittedStage[duty] === stage
 }
 
 export function truckAllowsMiniWmsMission(
@@ -132,10 +187,10 @@ export function miniWmsAssignmentReason(
   const stage = miniWmsMissionStage(mission)
   const action: Record<MiniWmsMissionStage, string> = {
     'unload-truck': 'descarregar o caminhão no recebimento',
-    'inbound-transfer': 'levar o pallet do recebimento ao buffer da rua',
+    'inbound-transfer': 'levar o pallet da descarga ao buffer da rua',
     putaway: 'armazenar o pallet no endereço definido',
     retrieve: 'retirar o pallet do rack para a expedição',
-    'outbound-transfer': 'levar o pallet ao pré-embarque',
+    'outbound-transfer': 'levar o pallet do buffer da rua ao pré-embarque',
     'load-truck': 'carregar o pallet no caminhão de expedição',
   }
   return `${miniWmsVehicleBadge(vehicle)} autorizada para ${action[stage]}. ${mission.source.label} → ${mission.destination.label}.`
