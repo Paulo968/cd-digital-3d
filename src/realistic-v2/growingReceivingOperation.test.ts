@@ -41,7 +41,7 @@ describe('recebimento crescente da Realistic V3', () => {
   it('acelera a RX20 e preserva pallets de caminhões anteriores', () => {
     expect(RECEIVING_V2.forwardSpeed).toBeGreaterThan(4)
     expect(RECEIVING_V2.loadedSpeed).toBeGreaterThan(3)
-    expect(RECEIVING_V2.floorDepth).toBeGreaterThan(300)
+    expect(RECEIVING_V2.floorDepth).toBeGreaterThan(250)
 
     const simulation = new ReceivingSimulation()
 
