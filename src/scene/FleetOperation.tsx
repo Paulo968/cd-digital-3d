@@ -1,16 +1,7 @@
-import { useMemo } from 'react'
 import type { WarehouseLayout } from '../domain/layout'
 import type { RealisticFleetPlan } from '../domain/realisticFleet'
-import { buildStableFleetPlan } from '../domain/stableFleet'
 import type { WarehouseLocation } from '../domain/warehouse'
-import { useOperationsControlStore } from '../store/operationsControlStore'
-import { MiniWmsFleetOperation } from './MiniWmsFleetOperation'
-import { MiniWmsHomeZones } from './MiniWmsHomeZones'
-import { MiniWmsPalletVisibilityBridge } from './MiniWmsPalletVisibilityBridge'
-import { MiniWmsTruckCycleController } from './MiniWmsTruckCycleController'
-import { OutboundPilotRackLayer } from './OutboundPilotRackLayer'
-import { PalletCollisionRegistry } from './PalletCollisionRegistry'
-import { TrafficFlowMarkers } from './TrafficFlowMarkers'
+import { RealisticReceivingPhaseOne } from './RealisticReceivingPhaseOne'
 
 interface FleetOperationProps {
   layout: WarehouseLayout
@@ -20,41 +11,14 @@ interface FleetOperationProps {
 }
 
 /**
- * Piloto de expedição com três equipamentos e uma única cadeia:
- * retrátil de retirada → transpaleteira de saída → RX20 de carregamento.
+ * Primeira fase isolada do modo realista.
+ *
+ * O operacional continua usando sua própria representação. Aqui existe somente
+ * a célula contínua de recebimento: caminhão com seis pallets e uma RX20 que
+ * entra reta, coleta, sai de ré, libera a carroceria, gira e deposita na área de
+ * descarga. As etapas posteriores voltarão apenas depois desta célula ficar
+ * estável no navegador.
  */
-export function FleetOperation({
-  layout,
-  locations,
-  plan,
-  compact,
-}: FleetOperationProps) {
-  const truckPhase = useOperationsControlStore((state) => state.truck.phase)
-  const outboundPlan = useMemo(
-    () => buildStableFleetPlan(plan, layout, locations),
-    [layout, locations, plan],
-  )
-
-  const dispatchPlan = useMemo(() => ({ ...outboundPlan }), [outboundPlan])
-  const dispatchVehicles = useMemo(() => {
-    void truckPhase
-    return [...outboundPlan.vehicles]
-  }, [outboundPlan, truckPhase])
-  dispatchPlan.vehicles = dispatchVehicles
-
-  return (
-    <>
-      <MiniWmsTruckCycleController />
-      <MiniWmsPalletVisibilityBridge plan={dispatchPlan} />
-      <PalletCollisionRegistry plan={dispatchPlan} />
-      <OutboundPilotRackLayer layout={layout} locations={locations} />
-      <TrafficFlowMarkers layout={layout} compact={compact} />
-      <MiniWmsHomeZones vehicles={outboundPlan.vehicles} />
-      <MiniWmsFleetOperation
-        layout={layout}
-        plan={dispatchPlan}
-        compact={false}
-      />
-    </>
-  )
+export function FleetOperation({ layout }: FleetOperationProps) {
+  return <RealisticReceivingPhaseOne layout={layout} />
 }
