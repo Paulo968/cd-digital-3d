@@ -1,6 +1,6 @@
+import { createReceivingKernelRuntime } from '../realistic/receiving/receivingKernelRuntime'
 import {
   RECEIVING_V2,
-  ReceivingSimulation,
   type Point2,
   type ReceivingScenarioConfig,
 } from './receivingSimulation'
@@ -66,10 +66,8 @@ export function growingStagingPoint(index: number): Point2 {
 /**
  * Cenário explícito do recebimento crescente.
  *
- * Diferente da implementação anterior, esta configuração não altera constantes
- * globais nem o prototype de ReceivingSimulation. Assim outros cenários podem
- * coexistir na mesma aplicação e nos mesmos testes sem depender da ordem de
- * imports.
+ * A geometria e a dinâmica ficam na configuração. O avanço temporal, os
+ * comandos, os eventos e os snapshots são responsabilidade do kernel vivo.
  */
 export const GROWING_RECEIVING_CONFIG: ReceivingScenarioConfig = {
   ...RECEIVING_V2,
@@ -106,6 +104,6 @@ export const GROWING_RECEIVING_CONFIG: ReceivingScenarioConfig = {
   }),
 }
 
-export function createGrowingReceivingSimulation(): ReceivingSimulation {
-  return new ReceivingSimulation(GROWING_RECEIVING_CONFIG)
+export function createGrowingReceivingSimulation() {
+  return createReceivingKernelRuntime(GROWING_RECEIVING_CONFIG)
 }
