@@ -30,21 +30,15 @@ const CAMERA_LABELS: Record<RealisticCameraMode, string> = {
 
 function eventLabel(event: KernelEvent): string {
   const payload = event.payload ?? {}
-  if (event.type === 'pallet.picked') {
-    return `Coleta · ${String(payload.palletId ?? 'pallet')}`
-  }
+  if (event.type === 'pallet.picked') return `Coleta · ${String(payload.palletId ?? 'pallet')}`
   if (event.type === 'pallet.staged') {
     return `Staging · posição D${Number(payload.stagedSlot ?? 0) + 1}`
   }
   if (event.type === 'truck.receiving.completed') {
     return `Caminhão ${String(payload.completedBatch ?? '')} concluído`
   }
-  if (event.type === 'truck.phase.changed') {
-    return `Caminhão · ${String(payload.to ?? 'movimento')}`
-  }
-  if (event.type === 'receiving.batch.started') {
-    return `Novo lote ${String(payload.batch ?? '')}`
-  }
+  if (event.type === 'truck.phase.changed') return `Caminhão · ${String(payload.to ?? 'movimento')}`
+  if (event.type === 'receiving.batch.started') return `Novo lote ${String(payload.batch ?? '')}`
   if (event.type === 'safety.fault.activated') {
     return `Segurança · ${String(payload.reason ?? 'parada')}`
   }
@@ -109,12 +103,7 @@ export function RealisticOperationsHud({
           backdropFilter: 'blur(10px)',
         }}
       >
-        <div
-          style={{
-            padding: '12px 14px 10px',
-            borderBottom: '1px solid rgba(148,163,184,.18)',
-          }}
-        >
+        <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid rgba(148,163,184,.18)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
@@ -131,14 +120,10 @@ export function RealisticOperationsHud({
                   CD REALISTA · OPERAÇÃO VIVA
                 </strong>
               </div>
-              <div style={{ marginTop: 5, fontSize: 10, color: '#a5f3fc' }}>
-                {state.label}
-              </div>
+              <div style={{ marginTop: 5, fontSize: 10, color: '#a5f3fc' }}>{state.label}</div>
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
-              <div style={{ fontSize: 16, fontWeight: 800, color: '#67e8f9' }}>
-                {timeScale}×
-              </div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: '#67e8f9' }}>{timeScale}×</div>
               <div style={{ fontSize: 8, color: '#94a3b8' }}>RITMO</div>
             </div>
           </div>
@@ -156,14 +141,7 @@ export function RealisticOperationsHud({
               <span>Caminhão atual</span>
               <span>{currentCompleted}/6 pallets</span>
             </div>
-            <div
-              style={{
-                height: 6,
-                borderRadius: 999,
-                background: 'rgba(51,65,85,.75)',
-                overflow: 'hidden',
-              }}
-            >
+            <div style={{ height: 6, borderRadius: 999, background: 'rgba(51,65,85,.75)', overflow: 'hidden' }}>
               <div
                 style={{
                   width: `${currentProgress}%`,
@@ -200,20 +178,14 @@ export function RealisticOperationsHud({
                 border: '1px solid rgba(148,163,184,.12)',
               }}
             >
-              <span style={{ display: 'block', fontSize: 8, color: '#94a3b8' }}>
-                {label}
-              </span>
-              <strong style={{ display: 'block', marginTop: 2, fontSize: 13 }}>
-                {value}
-              </strong>
+              <span style={{ display: 'block', fontSize: 8, color: '#94a3b8' }}>{label}</span>
+              <strong style={{ display: 'block', marginTop: 2, fontSize: 13 }}>{value}</strong>
             </div>
           ))}
         </div>
 
         <div style={{ padding: '0 12px 10px' }}>
-          <div style={{ fontSize: 8, color: '#64748b', marginBottom: 5 }}>
-            VELOCIDADE DA EXPERIÊNCIA
-          </div>
+          <div style={{ fontSize: 8, color: '#64748b', marginBottom: 5 }}>VELOCIDADE DA EXPERIÊNCIA</div>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {SPEEDS.map((speed) => (
               <button
