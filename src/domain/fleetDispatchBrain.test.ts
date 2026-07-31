@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
-  buildAdaptiveFleetPath,
   chooseBrainMissionForVehicle,
   vehicleLanePreference,
 } from './fleetDispatchBrain'
@@ -9,6 +8,7 @@ import {
   buildRealisticFleetPlan,
   type FleetMission,
 } from './realisticFleet'
+import { buildTravelPath, getZoneWorldPoint } from './routePlanning'
 import { generateWarehouseSkeleton } from './warehouse'
 import { useOperationsControlStore } from '../store/operationsControlStore'
 
@@ -17,7 +17,7 @@ const locations = generateWarehouseSkeleton(layout)
 const plan = buildRealisticFleetPlan(
   layout,
   locations,
-  { frontZ: 30, receivingX: -17, shippingX: 17 },
+  { frontZ: 49.5, receivingX: -31, shippingX: 31 },
   false,
 )
 
@@ -101,11 +101,18 @@ describe('fleetDispatchBrain', () => {
     expect(selected).toBeUndefined()
   })
 
-  it('gera rotas distintas para lados preferenciais opostos', () => {
-    const from = { x: -17, y: 0.2, z: 29 }
-    const to = { x: 4, y: 0.2, z: -20 }
-    const leftPath = buildAdaptiveFleetPath(layout, from, to, 'EMP-01')
-    const rightPath = buildAdaptiveFleetPath(layout, from, to, 'EMP-02')
+  it('mantém caminhos físicos distintos nas duas cabeceiras do CD maior', () => {
+    const from = getZoneWorldPoint(layout, 'shipping')
+    const firstRow = layout.rackRows.find((row) => row.active)!
+    const to = { x: 0, y: 0.2, z: firstRow.origin.z }
+    const leftPath = buildTravelPath(layout, from, to, {
+      left: false,
+      right: true,
+    })
+    const rightPath = buildTravelPath(layout, from, to, {
+      left: true,
+      right: false,
+    })
 
     expect(leftPath.length).toBeGreaterThan(2)
     expect(rightPath.length).toBeGreaterThan(2)
