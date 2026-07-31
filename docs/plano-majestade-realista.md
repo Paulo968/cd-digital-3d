@@ -8,9 +8,7 @@ A regra central passa a ser:
 
 > domínio e simulação decidem; Three.js representa.
 
-A primeira entrega substituiu alterações globais de constantes e `prototype` por configurações explícitas de cenário. Os recebimentos padrão, compacto e crescente coexistem sem depender da ordem de imports.
-
-A segunda entrega introduziu o kernel vivo e conectou o recebimento crescente a ele.
+A primeira entrega desta migração substitui alterações globais de constantes e `prototype` por uma configuração explícita de cenário. O recebimento padrão e o recebimento crescente podem coexistir sem depender da ordem de imports.
 
 ## Fundação entregue
 
@@ -19,25 +17,29 @@ A segunda entrega introduziu o kernel vivo e conectou o recebimento crescente a 
 - pallets são acoplados e desacoplados por identificador, não pela posição circunstancial no array;
 - capacidade e persistência do staging são regras do cenário;
 - curvas de aproximação e retorno são resolvidas no início real da ação;
-- layouts compacto e crescente deixaram de modificar `RECEIVING_V2` e `ReceivingSimulation.prototype`;
-- a cena ativa usa uma fábrica explícita do cenário crescente;
+- `growingReceivingOperation` deixou de modificar `RECEIVING_V2` e `ReceivingSimulation.prototype`;
+- a cena ativa usa `createGrowingReceivingSimulation()` explicitamente;
 - testes validam a coexistência dos cenários e a preservação de pallets entre caminhões.
 
-## Kernel vivo entregue
+## Fase 1 — Kernel de mundo — ENTREGUE
 
-- relógio determinístico com passo fixo de 30 Hz;
-- pausa, retomada, escala de tempo e avanço de um tick;
-- fila de comandos imediatos ou agendados;
-- execução de comandos no início do tick;
-- registro limitado de eventos serializáveis;
-- snapshots do relógio, comandos, eventos e sistemas;
-- restauração com reprodução determinística do mesmo futuro;
-- contrato comum para novos sistemas;
-- sistema `receiving` conectado ao kernel;
-- eventos de transição, caminhão, pallet, lote, reset e falha;
-- cena existente avançando pelo runtime do kernel sem depender do React para decidir o tempo.
+O kernel vivo já controla:
 
-A especificação está em [`docs/kernel-vivo.md`](kernel-vivo.md).
+- passo fixo determinístico em 30 Hz;
+- pausa, retomada, avanço manual e escala de tempo;
+- comandos imediatos ou agendados;
+- eventos serializáveis com tick e tempo de simulação;
+- snapshots e restauração;
+- contrato comum para registrar novos sistemas;
+- integração real do recebimento crescente.
+
+A experiência visual também recebeu a primeira evolução perceptível:
+
+- ritmo padrão 2× e controles 1×, 2×, 4× e 8×;
+- câmera cinematográfica, visão geral, acompanhamento da RX20 e câmera da doca;
+- HUD operacional com progresso do caminhão, telemetria e eventos ao vivo;
+- trilha luminosa, beacon da empilhadeira e sinais pulsantes de doca;
+- iluminação industrial, slots de staging e corredor futuro da TP-IN destacados.
 
 ## Próximas fases
 
