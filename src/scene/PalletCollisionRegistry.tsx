@@ -15,6 +15,10 @@ import {
   upsertRuntimeHazard,
 } from './dynamicSafetyRuntime'
 
+function basePalletId(palletId: string): string {
+  return palletId.replace(/-C\d+$/, '')
+}
+
 function activePalletIds(plan: RealisticFleetPlan): Set<string> {
   const groups = new Map<string, Set<string>>()
   plan.missions.forEach((mission) => {
@@ -99,7 +103,9 @@ export function PalletCollisionRegistry({
 
     const palletIds = new Set([
       ...Object.keys(initialStopByPallet),
-      ...Object.keys(pallets).filter((palletId) => activeIds.has(palletId)),
+      ...Object.keys(pallets).filter((palletId) =>
+        activeIds.has(basePalletId(palletId)),
+      ),
     ])
 
     palletIds.forEach((palletId) => {
