@@ -5,6 +5,7 @@ import { buildStableFleetPlan } from '../domain/stableFleet'
 import type { WarehouseLocation } from '../domain/warehouse'
 import { useOperationsControlStore } from '../store/operationsControlStore'
 import { MiniWmsFleetOperation } from './MiniWmsFleetOperation'
+import { MiniWmsHomeZones } from './MiniWmsHomeZones'
 import { MiniWmsTruckCycleController } from './MiniWmsTruckCycleController'
 import { TrafficFlowMarkers } from './TrafficFlowMarkers'
 
@@ -16,9 +17,9 @@ interface FleetOperationProps {
 }
 
 /**
- * Executa uma célula Mini-WMS determinística. O controlador distribui as
- * etapas por tipo de equipamento; o 3D apenas cumpre a ordem recebida e aplica
- * sensores mais contato físico rígido.
+ * Executa duas cadeias Mini-WMS determinísticas com seis equipamentos:
+ * recebimento, transferência de entrada, armazenagem, retirada, transferência
+ * de saída e carregamento. Cada veículo possui uma vaga física exclusiva.
  */
 export function FleetOperation({
   layout,
@@ -43,6 +44,7 @@ export function FleetOperation({
     <>
       <MiniWmsTruckCycleController />
       <TrafficFlowMarkers layout={layout} compact={compact} />
+      <MiniWmsHomeZones vehicles={stablePlan.vehicles} />
       <MiniWmsFleetOperation
         layout={layout}
         plan={dispatchPlan}
