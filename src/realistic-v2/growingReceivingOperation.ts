@@ -10,9 +10,9 @@ import {
 export const GROWING_STAGING = {
   columnsPerRow: 4,
   columnXs: [12, 17, 22, 27] as const,
-  firstRowZ: -108,
+  firstRowZ: -46,
   rowSpacing: 4.4,
-  rowsPerBank: 24,
+  rowsPerBank: 10,
   bankSpacingX: 22,
   maximumBanks: 2,
   approachZ: -1.5,
@@ -20,14 +20,14 @@ export const GROWING_STAGING = {
   forkliftLaneWidth: 7,
   futureTranspalletLaneCenterX: 6.2,
   futureTranspalletLaneWidth: 4.8,
-  futureTranspalletEntryZ: -116,
+  futureTranspalletEntryZ: -56,
 } as const
 
 export const EMPTY_WAREHOUSE_V3 = {
-  partitionZ: -116,
-  backWallZ: -171,
-  rackStartZ: -126,
-  rackEndZ: -162,
+  partitionZ: -56,
+  backWallZ: -116,
+  rackStartZ: -66,
+  rackEndZ: -106,
   rackRowXs: [-36, -24, -12, 0, 12, 24] as const,
   aisleNames: ['RUA A', 'RUA B', 'RUA C', 'RUA D', 'RUA E'] as const,
   transpalletDoorX: 6.2,
@@ -63,7 +63,7 @@ export function growingStagingPoint(index: number): Point2 {
 
 Object.defineProperties(RECEIVING_V2, {
   floorWidth: { configurable: true, enumerable: true, value: 112 },
-  floorDepth: { configurable: true, enumerable: true, value: 360 },
+  floorDepth: { configurable: true, enumerable: true, value: 280 },
   stagingApproachZ: {
     configurable: true,
     enumerable: true,
