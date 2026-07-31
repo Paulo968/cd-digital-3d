@@ -1,10 +1,8 @@
-import './receivingPathRefinement'
 import {
   RECEIVING_V2,
   ReceivingSimulation,
   type Point2,
-  type ReceivingPallet,
-  type ReceivingSimulationState,
+  type ReceivingScenarioConfig,
 } from './receivingSimulation'
 
 export const GROWING_STAGING = {
@@ -36,13 +34,17 @@ export const EMPTY_WAREHOUSE_V3 = {
   pedestrianDoorWidth: 2.2,
 } as const
 
-const TOTAL_DYNAMIC_SLOTS =
+export const TOTAL_DYNAMIC_STAGING_SLOTS =
   GROWING_STAGING.columnsPerRow *
   GROWING_STAGING.rowsPerBank *
   GROWING_STAGING.maximumBanks
 
 export function growingStagingPoint(index: number): Point2 {
-  if (!Number.isInteger(index) || index < 0 || index >= TOTAL_DYNAMIC_SLOTS) {
+  if (
+    !Number.isInteger(index) ||
+    index < 0 ||
+    index >= TOTAL_DYNAMIC_STAGING_SLOTS
+  ) {
     throw new Error(`Posição dinâmica de staging inexistente: ${index}`)
   }
 
@@ -61,151 +63,49 @@ export function growingStagingPoint(index: number): Point2 {
   }
 }
 
-Object.defineProperties(RECEIVING_V2, {
-  floorWidth: { configurable: true, enumerable: true, value: 112 },
-  floorDepth: { configurable: true, enumerable: true, value: 280 },
-  stagingApproachZ: {
-    configurable: true,
-    enumerable: true,
-    value: GROWING_STAGING.approachZ,
-  },
-  forwardSpeed: { configurable: true, enumerable: true, value: 4.45 },
-  loadedSpeed: { configurable: true, enumerable: true, value: 3.35 },
-  reverseSpeed: { configurable: true, enumerable: true, value: 3.05 },
-  angularSpeed: { configurable: true, enumerable: true, value: 2.35 },
-  acceleration: { configurable: true, enumerable: true, value: 5.1 },
-  braking: { configurable: true, enumerable: true, value: 7.2 },
-  truckSpeed: { configurable: true, enumerable: true, value: 18 },
-})
-
-let resolvingBatchCoordinates = false
-let batchSlotOffset = 0
-let activeResolvedStageIndex = 0
-const stageXs = RECEIVING_V2.stageXs as unknown as number[]
-
-for (let index = 0; index < TOTAL_DYNAMIC_SLOTS; index += 1) {
-  Object.defineProperty(stageXs, index, {
-    configurable: true,
-    enumerable: true,
-    get() {
-      const resolvedIndex =
-        resolvingBatchCoordinates && index < 6
-          ? batchSlotOffset + index
-          : index
-      activeResolvedStageIndex = resolvedIndex
-      return growingStagingPoint(resolvedIndex).x
+/**
+ * Cenário explícito do recebimento crescente.
+ *
+ * Diferente da implementação anterior, esta configuração não altera constantes
+ * globais nem o prototype de ReceivingSimulation. Assim outros cenários podem
+ * coexistir na mesma aplicação e nos mesmos testes sem depender da ordem de
+ * imports.
+ */
+export const GROWING_RECEIVING_CONFIG: ReceivingScenarioConfig = {
+  ...RECEIVING_V2,
+  id: 'receiving-growing-v4',
+  palletIdPrefix: 'REC-V4',
+  floorWidth: 112,
+  floorDepth: 280,
+  stagingApproachZ: GROWING_STAGING.approachZ,
+  stagingZ: GROWING_STAGING.firstRowZ,
+  stageXs: GROWING_STAGING.columnXs,
+  stagingCapacity: TOTAL_DYNAMIC_STAGING_SLOTS,
+  preserveStagedPallets: true,
+  forwardSpeed: 4.45,
+  loadedSpeed: 3.35,
+  reverseSpeed: 3.05,
+  angularSpeed: 2.35,
+  acceleration: 5.1,
+  braking: 7.2,
+  truckSpeed: 18,
+  resolveStagingPoint: growingStagingPoint,
+  resolveDockApproachControl: (current) => ({
+    x: current.x,
+    z: Math.max(current.z + 10, 1),
+  }),
+  resolveReturnHomeCurve: (current) => ({
+    control1: {
+      x: current.x,
+      z: 6,
     },
-  })
+    control2: {
+      x: -22,
+      z: 4,
+    },
+  }),
 }
 
-Object.defineProperty(RECEIVING_V2, 'stagingZ', {
-  configurable: true,
-  enumerable: true,
-  get() {
-    return growingStagingPoint(activeResolvedStageIndex).z
-  },
-})
-
-interface InternalAction {
-  kind: string
-  label?: string
-  stageIndex?: number
-  control1?: Point2
-  control2?: Point2
-  [key: string]: unknown
-}
-
-interface InternalReceivingSimulation {
-  state: ReceivingSimulationState
-  queue: InternalAction[]
-}
-
-interface InternalPrototype {
-  enqueueBatchActions(this: InternalReceivingSimulation): void
-  processImmediate(
-    this: InternalReceivingSimulation,
-    action: InternalAction,
-  ): boolean
-  beginAction(this: InternalReceivingSimulation, action: InternalAction): void
-}
-
-const prototype = ReceivingSimulation.prototype as unknown as InternalPrototype
-const originalEnqueueBatchActions = prototype.enqueueBatchActions
-const originalProcessImmediate = prototype.processImmediate
-const originalBeginAction = prototype.beginAction
-
-prototype.enqueueBatchActions = function enqueueGrowingBatch(): void {
-  batchSlotOffset = this.state.pallets.filter(
-    (pallet) => pallet.phase === 'staged',
-  ).length
-
-  if (batchSlotOffset + 6 > TOTAL_DYNAMIC_SLOTS) {
-    this.state.fault = 'capacidade temporária do staging atingida'
-    this.state.forklift.phase = 'fault'
-    this.state.forklift.speed = 0
-    this.state.label =
-      'STAGING TEMPORARIAMENTE CHEIO · AGUARDANDO FUTURA TRANSPALETEIRA'
-    this.state.revision += 1
-    return
-  }
-
-  const queueStart = this.queue.length
-  resolvingBatchCoordinates = true
-  try {
-    originalEnqueueBatchActions.call(this)
-  } finally {
-    resolvingBatchCoordinates = false
-  }
-
-  for (let index = queueStart; index < this.queue.length; index += 1) {
-    const action = this.queue[index]
-    if (action.kind === 'detach' && typeof action.stageIndex === 'number') {
-      action.stageIndex += batchSlotOffset
-    }
-  }
-}
-
-prototype.processImmediate = function processGrowingImmediate(
-  action: InternalAction,
-): boolean {
-  if (action.kind !== 'reset-batch') {
-    return originalProcessImmediate.call(this, action)
-  }
-
-  const stagedPallets = this.state.pallets
-    .filter((pallet) => pallet.phase === 'staged')
-    .map((pallet): ReceivingPallet => ({ ...pallet }))
-
-  const processed = originalProcessImmediate.call(this, action)
-  const incomingPallets = this.state.pallets.map(
-    (pallet): ReceivingPallet => ({ ...pallet }),
-  )
-
-  this.state.pallets = [...incomingPallets, ...stagedPallets]
-  this.state.revision += 1
-  return processed
-}
-
-prototype.beginAction = function beginGrowingAction(
-  action: InternalAction,
-): void {
-  const isReturnHome =
-    action.kind === 'move-curve' &&
-    action.label?.includes('RX20 RETORNANDO À VAGA')
-
-  const refined = isReturnHome
-    ? {
-        ...action,
-        control1: {
-          x: this.state.forklift.position.x,
-          z: 6,
-        },
-        control2: {
-          x: -22,
-          z: 4,
-        },
-      }
-    : action
-
-  originalBeginAction.call(this, refined)
+export function createGrowingReceivingSimulation(): ReceivingSimulation {
+  return new ReceivingSimulation(GROWING_RECEIVING_CONFIG)
 }
