@@ -1,4 +1,5 @@
 import type { WarehouseLayout } from '../domain/layout'
+import '../realistic-v2/receivingPathRefinement'
 import type { WarehouseLocation } from '../domain/warehouse'
 import { RealisticWorldV2 } from './RealisticWorldV2'
 
