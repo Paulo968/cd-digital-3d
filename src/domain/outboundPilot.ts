@@ -3,6 +3,7 @@ import {
   type IndustrialFlowPlan,
 } from './industrialFlow'
 import type { WarehouseLayout } from './layout'
+import { MINI_WMS_PALLETS_PER_WAVE } from './miniWms'
 import {
   buildTrafficCells,
   type FleetMission,
@@ -78,22 +79,58 @@ function mission(
   }
 }
 
+function locationPriority(
+  left: WarehouseLocation,
+  right: WarehouseLocation,
+): number {
+  return (
+    (left.zone === 'picking' ? 0 : 1) -
+      (right.zone === 'picking' ? 0 : 1) ||
+    left.level - right.level ||
+    left.position - right.position ||
+    left.side.localeCompare(right.side)
+  )
+}
+
+/**
+ * Faz rodízio entre as ruas. Com sete ruas e ondas de seis pallets, uma mesma
+ * onda nunca tenta colocar dois pallets no mesmo buffer de retirada.
+ */
 function movableLocations(locations: WarehouseLocation[]): WarehouseLocation[] {
-  return locations
+  const byAisle = new Map<string, WarehouseLocation[]>()
+  locations
     .filter(
       (location) =>
         location.quantity > 0 &&
         location.status !== 'blocked' &&
         Boolean(location.address),
     )
-    .sort(
-      (left, right) =>
-        (left.zone === 'picking' ? 0 : 1) -
-          (right.zone === 'picking' ? 0 : 1) ||
-        left.aisle.localeCompare(right.aisle) ||
-        left.level - right.level ||
-        left.position - right.position,
-    )
+    .forEach((location) => {
+      const group = byAisle.get(location.aisle) ?? []
+      group.push(location)
+      byAisle.set(location.aisle, group)
+    })
+
+  const aisles = [...byAisle.keys()].sort()
+  aisles.forEach((aisle) => byAisle.get(aisle)?.sort(locationPriority))
+  const cursors = new Map(aisles.map((aisle) => [aisle, 0]))
+  const result: WarehouseLocation[] = []
+  let remaining = true
+
+  while (remaining) {
+    remaining = false
+    aisles.forEach((aisle) => {
+      const group = byAisle.get(aisle) ?? []
+      const cursor = cursors.get(aisle) ?? 0
+      const next = group[cursor]
+      if (!next) return
+      result.push(next)
+      cursors.set(aisle, cursor + 1)
+      remaining = true
+    })
+  }
+
+  return result
 }
 
 function industrialStops(
@@ -108,6 +145,48 @@ function industrialStops(
     shippingBufferStops: plan.shippingBufferStops,
     truckStops: plan.truckStops,
   }
+}
+
+function expandedShippingBuffers(
+  baseStops: RealisticMissionStop[],
+): RealisticMissionStop[] {
+  const base = baseStops[0]
+  const centerResting = baseStops.reduce(
+    (total, stop) => ({
+      x: total.x + stop.restingPoint.x / baseStops.length,
+      z: total.z + stop.restingPoint.z / baseStops.length,
+    }),
+    { x: 0, z: 0 },
+  )
+  const centerAccess = baseStops.reduce(
+    (total, stop) => ({
+      x: total.x + stop.access.x / baseStops.length,
+      z: total.z + stop.access.z / baseStops.length,
+    }),
+    { x: 0, z: 0 },
+  )
+
+  return Array.from({ length: MINI_WMS_PALLETS_PER_WAVE }, (_, index) => {
+    const lateral =
+      (index - (MINI_WMS_PALLETS_PER_WAVE - 1) / 2) * 2.05
+    const offsetX = Math.cos(base.facing) * lateral
+    const offsetZ = Math.sin(base.facing) * lateral
+    return {
+      ...base,
+      id: `pilot-shipping-buffer:${index + 1}`,
+      label: `Pré-embarque exclusivo ${index + 1}`,
+      access: {
+        ...base.access,
+        x: centerAccess.x + offsetX,
+        z: centerAccess.z + offsetZ,
+      },
+      restingPoint: {
+        ...base.restingPoint,
+        x: centerResting.x + offsetX,
+        z: centerResting.z + offsetZ,
+      },
+    }
+  })
 }
 
 /**
@@ -152,6 +231,7 @@ export function buildOutboundPilotQueue(
   const missions: FleetMission[] = []
   const initialPalletStops: Record<string, RealisticMissionStop> = {}
   const eligibleAddresses: string[] = []
+  const preShippingStops = expandedShippingBuffers(stops.shippingBufferStops)
 
   movableLocations(locations).forEach((location, index) => {
     const source = rackStop(layout, location)
@@ -163,9 +243,9 @@ export function buildOutboundPilotQueue(
       stops.outboundAisleBufferStops[
         index % stops.outboundAisleBufferStops.length
       ]
-    const preShipping =
-      stops.shippingBufferStops[index % stops.shippingBufferStops.length]
-    const truck = stops.truckStops[index % stops.truckStops.length]
+    const wavePosition = index % MINI_WMS_PALLETS_PER_WAVE
+    const preShipping = preShippingStops[wavePosition]
+    const truck = stops.truckStops[wavePosition % stops.truckStops.length]
     const palletId = `OUT-${location.address}`
     const color = PALLET_COLORS[index % PALLET_COLORS.length]
     const base = index * 10
