@@ -59,15 +59,15 @@ export interface LayoutValidationIssue {
 const DEFAULT_CREATED_AT = '2026-07-28T00:00:00-03:00'
 
 export const DEFAULT_WAREHOUSE_LAYOUT: WarehouseLayout = {
-  id: 'layout-demo-v1',
-  name: 'Mini CD demonstrativo',
-  version: 1,
+  id: 'layout-demo-v2',
+  name: 'CD piloto de expedição',
+  version: 2,
   status: 'active',
   createdAt: DEFAULT_CREATED_AT,
-  updatedAt: DEFAULT_CREATED_AT,
+  updatedAt: '2026-07-31T09:47:00-03:00',
   floor: {
-    width: 72,
-    depth: 36,
+    width: 108,
+    depth: 92,
   },
   rackRows: ['A', 'B', 'C', 'D', 'E', 'F', 'G'].map((aisle, index) => ({
     id: `rack-row-${aisle}`,
@@ -77,10 +77,10 @@ export const DEFAULT_WAREHOUSE_LAYOUT: WarehouseLayout = {
     pickingLevels: [1],
     origin: {
       x: 0,
-      z: index * 8.1 - 24.3,
+      z: index * 9.2 - 27.6,
     },
     rotationY: 0,
-    aisleWidth: 4.2,
+    aisleWidth: 5.2,
     bayWidth: 2.25,
     rackDepth: 1.25,
     levelHeight: 1.45,
@@ -89,19 +89,19 @@ export const DEFAULT_WAREHOUSE_LAYOUT: WarehouseLayout = {
   zones: [
     {
       id: 'zone-receiving',
-      name: 'Recebimento',
+      name: 'Recebimento — fase futura',
       type: 'receiving',
-      origin: { x: -17, z: 29 },
-      width: 6,
-      depth: 4,
+      origin: { x: -31, z: 41 },
+      width: 10,
+      depth: 7,
     },
     {
       id: 'zone-shipping',
       name: 'Expedição',
       type: 'shipping',
-      origin: { x: 17, z: 29 },
-      width: 6,
-      depth: 4,
+      origin: { x: 31, z: 41 },
+      width: 10,
+      depth: 7,
     },
   ],
 }
