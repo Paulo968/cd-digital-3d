@@ -4,6 +4,7 @@ import type {
   RealisticFleetPlan,
 } from './realisticFleet'
 import type { RealisticMissionStop } from './realisticMissionQueue'
+import { useOperationsControlStore } from '../store/operationsControlStore'
 
 export type MiniWmsEquipmentClass =
   | 'counterbalance'
@@ -88,17 +89,28 @@ export function vehicleCanExecuteMiniWmsMission(
   return stage === 'inbound-transfer' || stage === 'outbound-transfer'
 }
 
+export function truckAllowsMiniWmsMission(
+  mission: FleetMission,
+  truckDocked: boolean,
+): boolean {
+  return miniWmsMissionStage(mission) !== 'load-truck' || truckDocked
+}
+
 export function chooseMiniWmsMissionForVehicle(input: {
   vehicle: FleetVehicleDefinition
   availableMissions: FleetMission[]
   reservedMissionIds: Set<string>
   reservedDestinationIds: Set<string>
 }): FleetMission | undefined {
+  const truckDocked =
+    useOperationsControlStore.getState().truck.phase === 'docked'
+
   return input.availableMissions
     .filter(
       (mission) =>
         !input.reservedMissionIds.has(mission.id) &&
         !input.reservedDestinationIds.has(mission.destination.id) &&
+        truckAllowsMiniWmsMission(mission, truckDocked) &&
         vehicleCanExecuteMiniWmsMission(input.vehicle, mission),
     )
     .sort((left, right) => {
