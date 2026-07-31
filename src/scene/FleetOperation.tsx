@@ -34,10 +34,10 @@ export function FleetOperation({
   // somente a referência da lista de equipamentos quando a doca muda de fase.
   // Isso desperta o efeito de despacho sem reposicionar pallets ou veículos.
   const dispatchPlan = useMemo(() => ({ ...stablePlan }), [stablePlan])
-  const dispatchVehicles = useMemo(
-    () => [...stablePlan.vehicles],
-    [stablePlan, truckPhase],
-  )
+  const dispatchVehicles = useMemo(() => {
+    void truckPhase
+    return [...stablePlan.vehicles]
+  }, [stablePlan, truckPhase])
   dispatchPlan.vehicles = dispatchVehicles
 
   return (
