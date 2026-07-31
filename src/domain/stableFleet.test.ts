@@ -4,55 +4,75 @@ import { DEFAULT_WAREHOUSE_LAYOUT } from './layout'
 import { buildStableFleetPlan } from './stableFleet'
 import { generateWarehouseSkeleton } from './warehouse'
 
-describe('buildStableFleetPlan', () => {
-  it('reduz a operação para três equipamentos com funções não concorrentes', () => {
-    const layout = DEFAULT_WAREHOUSE_LAYOUT
-    const locations = generateWarehouseSkeleton(layout)
-    const plan = buildIndustrialFlowPlan(
+function stablePlan() {
+  const layout = DEFAULT_WAREHOUSE_LAYOUT
+  const locations = generateWarehouseSkeleton(layout)
+  return buildStableFleetPlan(
+    buildIndustrialFlowPlan(
       layout,
       locations,
       { frontZ: 30, receivingX: -17, shippingX: 17 },
       false,
-    )
+    ),
+  )
+}
 
-    const stable = buildStableFleetPlan(plan)
+describe('buildStableFleetPlan', () => {
+  it('cria seis equipamentos com funções operacionais exclusivas', () => {
+    const stable = stablePlan()
 
     expect(stable.vehicles.map((vehicle) => vehicle.id)).toEqual([
-      'RX-20',
-      'REACH-01',
-      'TP-01',
+      'RX-REC',
+      'TP-IN',
+      'REACH-PUT',
+      'REACH-PICK',
+      'TP-OUT',
+      'RX-LOAD',
     ])
-    expect(stable.vehicles[0].roles).toEqual([
-      'inbound-transfer',
-      'shipping',
-    ])
-    expect(stable.vehicles[1].roles).toEqual(['putaway', 'replenishment'])
-    expect(stable.vehicles[2].roles).toEqual([
-      'inbound-transfer',
-      'replenishment',
+    expect(stable.vehicles.map((vehicle) => vehicle.roles)).toEqual([
+      ['inbound-transfer'],
+      ['inbound-transfer'],
+      ['putaway'],
+      ['replenishment'],
+      ['replenishment'],
+      ['shipping'],
     ])
   })
 
-  it('mantém cobertura para todos os tipos de missão', () => {
-    const layout = DEFAULT_WAREHOUSE_LAYOUT
-    const locations = generateWarehouseSkeleton(layout)
-    const stable = buildStableFleetPlan(
-      buildIndustrialFlowPlan(
-        layout,
-        locations,
-        { frontZ: 30, receivingX: -17, shippingX: 17 },
-        false,
-      ),
+  it('mantém uma cadeia completa de entrada e uma de saída', () => {
+    const stable = stablePlan()
+    const inbound = stable.missions.filter((mission) =>
+      mission.palletId.includes('FLOW-IN'),
     )
-    const roles = new Set(stable.vehicles.flatMap((vehicle) => vehicle.roles))
+    const outbound = stable.missions.filter((mission) =>
+      mission.palletId.includes('FLOW-OUT'),
+    )
 
-    expect(roles).toEqual(
-      new Set([
-        'inbound-transfer',
-        'putaway',
-        'replenishment',
-        'shipping',
-      ]),
-    )
+    expect(inbound).toHaveLength(3)
+    expect(outbound).toHaveLength(3)
+    expect(inbound.map((mission) => mission.role)).toEqual([
+      'inbound-transfer',
+      'inbound-transfer',
+      'putaway',
+    ])
+    expect(outbound.map((mission) => mission.role)).toEqual([
+      'replenishment',
+      'replenishment',
+      'shipping',
+    ])
+  })
+
+  it('não posiciona dois equipamentos na mesma vaga de espera', () => {
+    const stable = stablePlan()
+
+    stable.vehicles.forEach((vehicle, index) => {
+      stable.vehicles.slice(index + 1).forEach((other) => {
+        const distance = Math.hypot(
+          vehicle.startPoint.x - other.startPoint.x,
+          vehicle.startPoint.z - other.startPoint.z,
+        )
+        expect(distance).toBeGreaterThan(1.5)
+      })
+    })
   })
 })
