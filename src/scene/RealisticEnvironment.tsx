@@ -1,6 +1,8 @@
 import type { WarehouseLayout } from '../domain/layout'
+import '../realistic-v2/compactStagingLayout'
 import '../realistic-v2/receivingPathRefinement'
 import type { WarehouseLocation } from '../domain/warehouse'
+import { CompactStagingLaneOverlay } from './CompactStagingLaneOverlay'
 import { RealisticWorldV2 } from './RealisticWorldV2'
 
 interface RealisticEnvironmentProps {
@@ -20,5 +22,10 @@ interface RealisticEnvironmentProps {
 export function RealisticEnvironment({
   compact,
 }: RealisticEnvironmentProps) {
-  return <RealisticWorldV2 compact={compact} />
+  return (
+    <>
+      <RealisticWorldV2 compact={compact} />
+      <CompactStagingLaneOverlay />
+    </>
+  )
 }
