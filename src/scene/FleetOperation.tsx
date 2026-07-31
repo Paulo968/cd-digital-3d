@@ -1,5 +1,7 @@
+import { useMemo } from 'react'
 import type { WarehouseLayout } from '../domain/layout'
 import type { RealisticFleetPlan } from '../domain/realisticFleet'
+import { buildStableFleetPlan } from '../domain/stableFleet'
 import type { WarehouseLocation } from '../domain/warehouse'
 import { LiveFleetOperation } from './LiveFleetOperation'
 import { TrafficFlowMarkers } from './TrafficFlowMarkers'
@@ -12,12 +14,10 @@ interface FleetOperationProps {
 }
 
 /**
- * A operação é única em qualquer dispositivo.
- *
- * O perfil compacto continua disponível para o restante do cenário, mas não
- * pode alterar quantidade de equipamentos, ritmo de decisão, regras de
- * segurança, papéis ou missões da frota. Assim PC e celular executam a mesma
- * simulação; diferenças de desempenho ficam restritas à câmera e ao render.
+ * A operação realista usa a mesma célula logística em qualquer dispositivo:
+ * uma RX 20 contrabalançada, uma retrátil e uma transpaleteira. A redução não
+ * remove etapas do fluxo; ela elimina equipamentos redundantes disputando as
+ * mesmas docas e corredores durante a demonstração.
  */
 export function FleetOperation({
   layout,
@@ -25,13 +25,15 @@ export function FleetOperation({
   plan,
   compact,
 }: FleetOperationProps) {
+  const stablePlan = useMemo(() => buildStableFleetPlan(plan), [plan])
+
   return (
     <>
       <TrafficFlowMarkers layout={layout} compact={compact} />
       <LiveFleetOperation
         layout={layout}
         locations={locations}
-        plan={plan}
+        plan={stablePlan}
         compact={false}
       />
     </>
