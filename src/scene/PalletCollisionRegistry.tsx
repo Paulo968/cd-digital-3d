@@ -3,6 +3,10 @@ import {
   industrialPlanIsActive,
   type IndustrialFlowPlan,
 } from '../domain/industrialFlow'
+import {
+  palletActsAsTrafficHazard,
+  palletTrafficRadius,
+} from '../domain/palletCollisionPolicy'
 import type { RealisticFleetPlan } from '../domain/realisticFleet'
 import type { RealisticMissionStop } from '../domain/realisticMissionQueue'
 import { useOperationsControlStore } from '../store/operationsControlStore'
@@ -31,10 +35,6 @@ function collisionStops(plan: RealisticFleetPlan): RealisticMissionStop[] {
   const unique = new Map<string, RealisticMissionStop>()
   ;[...base, ...industrial].forEach((stop) => unique.set(stop.id, stop))
   return [...unique.values()]
-}
-
-function isFloorCollisionStop(stop: RealisticMissionStop): boolean {
-  return stop.kind !== 'address'
 }
 
 export function PalletCollisionRegistry({
@@ -84,7 +84,7 @@ export function PalletCollisionRegistry({
 
     palletIds.forEach((palletId) => {
       // Durante coleta e transporte, o pallet da missão deixa de ser um obstáculo
-      // externo. Os demais pallets continuam bloqueando fisicamente a circulação.
+      // externo. Pallets já dentro do caminhão também ficam fora da via dinâmica.
       if (palletsInRunningMissions.has(palletId)) return
 
       const tracked = pallets[palletId]
@@ -93,7 +93,7 @@ export function PalletCollisionRegistry({
         : departedPalletsRef.current.has(palletId)
           ? undefined
           : initialStopByPallet[palletId]
-      if (!stop || !isFloorCollisionStop(stop)) return
+      if (!stop || !palletActsAsTrafficHazard(stop)) return
 
       const hazardId = `floor-pallet:${palletId}`
       nextHazards.add(hazardId)
@@ -105,7 +105,7 @@ export function PalletCollisionRegistry({
           y: 0.2,
           z: stop.restingPoint.z,
         },
-        radius: 0.68,
+        radius: palletTrafficRadius(stop),
         active: true,
       })
     })
