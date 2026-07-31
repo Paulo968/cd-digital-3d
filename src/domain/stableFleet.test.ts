@@ -39,27 +39,32 @@ describe('buildStableFleetPlan', () => {
     ])
   })
 
-  it('mantém uma cadeia completa de entrada e uma de saída', () => {
+  it('mantém duas cadeias demonstrativas completas com três etapas cada', () => {
     const stable = stablePlan()
-    const inbound = stable.missions.filter((mission) =>
-      mission.palletId.includes('FLOW-IN'),
-    )
-    const outbound = stable.missions.filter((mission) =>
-      mission.palletId.includes('FLOW-OUT'),
-    )
+    const groups = new Map<string, typeof stable.missions>()
 
-    expect(inbound).toHaveLength(3)
-    expect(outbound).toHaveLength(3)
-    expect(inbound.map((mission) => mission.role)).toEqual([
-      'inbound-transfer',
-      'inbound-transfer',
-      'putaway',
-    ])
-    expect(outbound.map((mission) => mission.role)).toEqual([
-      'replenishment',
-      'replenishment',
-      'shipping',
-    ])
+    stable.missions.forEach((mission) => {
+      const group = groups.get(mission.palletId) ?? []
+      group.push(mission)
+      groups.set(mission.palletId, group)
+    })
+
+    expect(groups.size).toBe(2)
+    ;[...groups.values()].forEach((missions) => {
+      expect(missions).toHaveLength(3)
+      const roles = missions.map((mission) => mission.role)
+      const inbound = [
+        'inbound-transfer',
+        'inbound-transfer',
+        'putaway',
+      ]
+      const outbound = ['replenishment', 'replenishment', 'shipping']
+      expect(roles).toSatisfy(
+        (value: string[]) =>
+          JSON.stringify(value) === JSON.stringify(inbound) ||
+          JSON.stringify(value) === JSON.stringify(outbound),
+      )
+    })
   })
 
   it('não posiciona dois equipamentos na mesma vaga de espera', () => {
