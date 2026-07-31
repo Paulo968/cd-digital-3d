@@ -59,11 +59,10 @@ describe('buildStableFleetPlan', () => {
         'putaway',
       ]
       const outbound = ['replenishment', 'replenishment', 'shipping']
-      expect(roles).toSatisfy(
-        (value: string[]) =>
-          JSON.stringify(value) === JSON.stringify(inbound) ||
-          JSON.stringify(value) === JSON.stringify(outbound),
-      )
+      const matchesKnownFlow =
+        JSON.stringify(roles) === JSON.stringify(inbound) ||
+        JSON.stringify(roles) === JSON.stringify(outbound)
+      expect(matchesKnownFlow).toBe(true)
     })
   })
 
