@@ -9,6 +9,7 @@ import {
   chooseMiniWmsMissionForVehicle,
   createMiniWmsCycle,
   miniWmsEquipmentClass,
+  miniWmsEquipmentDuty,
   truckAllowsMiniWmsMission,
   vehicleCanExecuteMiniWmsMission,
 } from './miniWms'
@@ -70,21 +71,37 @@ const unload = mission({
   eligibleKinds: ['forklift'],
   sequence: 1,
 })
+const inboundTransfer = mission({
+  id: 'inbound-transfer',
+  role: 'inbound-transfer',
+  source: stop('receiving:1', 'receiving'),
+  destination: stop('aisle-buffer:A', 'receiving'),
+  eligibleKinds: ['pallet-jack'],
+  sequence: 2,
+})
 const putaway = mission({
   id: 'putaway',
   role: 'putaway',
   source: stop('aisle-buffer:A', 'receiving'),
   destination: stop('address:A-01', 'address'),
   eligibleKinds: ['forklift'],
-  sequence: 2,
-})
-const transfer = mission({
-  id: 'transfer',
-  role: 'inbound-transfer',
-  source: stop('receiving:1', 'receiving'),
-  destination: stop('aisle-buffer:A', 'receiving'),
-  eligibleKinds: ['pallet-jack'],
   sequence: 3,
+})
+const retrieve = mission({
+  id: 'retrieve',
+  role: 'replenishment',
+  source: stop('address:A-02', 'address'),
+  destination: stop('outbound-buffer:A', 'receiving'),
+  eligibleKinds: ['forklift'],
+  sequence: 4,
+})
+const outboundTransfer = mission({
+  id: 'outbound-transfer',
+  role: 'replenishment',
+  source: stop('outbound-buffer:A', 'receiving'),
+  destination: stop('shipping-buffer:1', 'receiving'),
+  eligibleKinds: ['pallet-jack'],
+  sequence: 5,
 })
 const loadTruck = mission({
   id: 'load-truck',
@@ -92,46 +109,64 @@ const loadTruck = mission({
   source: stop('shipping-buffer:1', 'receiving'),
   destination: stop('truck:1', 'truck'),
   eligibleKinds: ['forklift'],
-  sequence: 4,
+  sequence: 6,
 })
+
+const stages = [
+  unload,
+  inboundTransfer,
+  putaway,
+  retrieve,
+  outboundTransfer,
+  loadTruck,
+]
+
+const equipment = [
+  vehicle('RX-REC', 'forklift'),
+  vehicle('TP-IN', 'pallet-jack'),
+  vehicle('REACH-PUT', 'forklift'),
+  vehicle('REACH-PICK', 'forklift'),
+  vehicle('TP-OUT', 'pallet-jack'),
+  vehicle('RX-LOAD', 'forklift'),
+]
 
 describe('mini WMS', () => {
   it('separa RX20, retrátil e transpaleteira por classe', () => {
-    expect(miniWmsEquipmentClass(vehicle('RX-20', 'forklift'))).toBe(
-      'counterbalance',
-    )
-    expect(miniWmsEquipmentClass(vehicle('REACH-01', 'forklift'))).toBe(
-      'reach-truck',
-    )
-    expect(miniWmsEquipmentClass(vehicle('TP-01', 'pallet-jack'))).toBe(
-      'pallet-jack',
-    )
+    expect(miniWmsEquipmentClass(equipment[0])).toBe('counterbalance')
+    expect(miniWmsEquipmentClass(equipment[2])).toBe('reach-truck')
+    expect(miniWmsEquipmentClass(equipment[1])).toBe('pallet-jack')
   })
 
-  it('não permite que a RX20 faça armazenagem nem que a retrátil descarregue caminhão', () => {
-    expect(vehicleCanExecuteMiniWmsMission(vehicle('RX-20', 'forklift'), unload)).toBe(
-      true,
-    )
-    expect(
-      vehicleCanExecuteMiniWmsMission(vehicle('RX-20', 'forklift'), putaway),
-    ).toBe(false)
-    expect(
-      vehicleCanExecuteMiniWmsMission(vehicle('REACH-01', 'forklift'), unload),
-    ).toBe(false)
-    expect(
-      vehicleCanExecuteMiniWmsMission(vehicle('REACH-01', 'forklift'), putaway),
-    ).toBe(true)
+  it('atribui uma função exclusiva para cada um dos seis equipamentos', () => {
+    expect(equipment.map(miniWmsEquipmentDuty)).toEqual([
+      'receiving-dock',
+      'inbound-transfer',
+      'putaway',
+      'retrieve',
+      'outbound-transfer',
+      'shipping-dock',
+    ])
   })
 
-  it('entrega a transferência interna somente à transpaleteira', () => {
+  it('cada equipamento executa somente sua própria etapa', () => {
+    equipment.forEach((currentVehicle, vehicleIndex) => {
+      stages.forEach((currentMission, missionIndex) => {
+        expect(
+          vehicleCanExecuteMiniWmsMission(currentVehicle, currentMission),
+        ).toBe(vehicleIndex === missionIndex)
+      })
+    })
+  })
+
+  it('o despachante não entrega a transferência de saída à TP de entrada', () => {
     const selected = chooseMiniWmsMissionForVehicle({
-      vehicle: vehicle('TP-01', 'pallet-jack'),
-      availableMissions: [unload, putaway, transfer],
+      vehicle: equipment[1],
+      availableMissions: [outboundTransfer, inboundTransfer],
       reservedMissionIds: new Set(),
       reservedDestinationIds: new Set(),
     })
 
-    expect(selected?.id).toBe('transfer')
+    expect(selected?.id).toBe('inbound-transfer')
   })
 
   it('mantém o carregamento aguardando enquanto o caminhão está fora da doca', () => {
@@ -142,7 +177,7 @@ describe('mini WMS', () => {
 
   it('gera IDs novos para cada ciclo operacional', () => {
     const plan: RealisticFleetPlan = {
-      vehicles: [vehicle('RX-20', 'forklift')],
+      vehicles: [equipment[0]],
       missions: [unload],
       initialPalletStops: { [unload.palletId]: unload.source },
       receivingStops: [],
