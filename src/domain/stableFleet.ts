@@ -1,9 +1,11 @@
+import type { WarehouseLayout } from './layout'
+import { buildOutboundPilotQueue } from './outboundPilot'
 import type {
-  FleetMission,
   FleetMissionRole,
   FleetVehicleDefinition,
   RealisticFleetPlan,
 } from './realisticFleet'
+import type { WarehouseLocation } from './warehouse'
 
 const REACH_PICK_ROLES: FleetMissionRole[] = ['replenishment']
 const TP_OUTBOUND_ROLES: FleetMissionRole[] = ['replenishment']
@@ -70,56 +72,19 @@ function point(
   return { x, y: source?.startPoint.y ?? 0.2, z }
 }
 
-function groupMissionsByPallet(
-  missions: FleetMission[],
-): Map<string, FleetMission[]> {
-  const groups = new Map<string, FleetMission[]>()
-  missions.forEach((mission) => {
-    const current = groups.get(mission.palletId) ?? []
-    current.push(mission)
-    groups.set(mission.palletId, current)
-  })
-  return groups
-}
-
-function isCompleteOutboundChain(missions: FleetMission[]): boolean {
-  const roles = missions.map((mission) => mission.role)
-  return (
-    roles.filter((role) => role === 'replenishment').length >= 2 &&
-    roles.includes('shipping')
-  )
-}
-
-function outboundOnlyMissions(plan: RealisticFleetPlan): {
-  missions: FleetMission[]
-  initialPalletStops: RealisticFleetPlan['initialPalletStops']
-} {
-  const palletIds = new Set(
-    [...groupMissionsByPallet(plan.missions).entries()]
-      .filter(([, missions]) => isCompleteOutboundChain(missions))
-      .map(([palletId]) => palletId),
-  )
-  const missions = plan.missions
-    .filter((mission) => palletIds.has(mission.palletId))
-    .sort((left, right) => left.sequence - right.sequence)
-  const initialPalletStops = Object.fromEntries(
-    Object.entries(plan.initialPalletStops).filter(([palletId]) =>
-      palletIds.has(palletId),
-    ),
-  )
-  return { missions, initialPalletStops }
-}
-
 /**
  * Piloto operacional de expedição.
  *
  * O recebimento fica completamente desativado nesta fase. Apenas três recursos
  * existem no mundo físico: uma retrátil retira o pallet do rack, uma
  * transpaleteira leva o mesmo pallet ao pré-embarque e uma RX20 carrega o
- * caminhão. As vagas são afastadas entre si e ficam todas do lado da expedição.
+ * caminhão. Todos os endereços ocupados entram na fila, mas são executados em
+ * ondas pequenas pelo Mini-WMS para preservar o desempenho do celular.
  */
 export function buildStableFleetPlan(
   plan: RealisticFleetPlan,
+  layout: WarehouseLayout,
+  locations: WarehouseLocation[],
 ): RealisticFleetPlan {
   const counterbalances = counterbalanceVehicles(plan.vehicles)
   const reaches = reachVehicles(plan.vehicles)
@@ -194,7 +159,7 @@ export function buildStableFleetPlan(
     ),
   ].filter((vehicle): vehicle is FleetVehicleDefinition => Boolean(vehicle))
 
-  const outbound = outboundOnlyMissions(plan)
+  const outbound = buildOutboundPilotQueue(plan, layout, locations)
 
   return {
     ...plan,
