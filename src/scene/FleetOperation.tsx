@@ -6,7 +6,9 @@ import type { WarehouseLocation } from '../domain/warehouse'
 import { useOperationsControlStore } from '../store/operationsControlStore'
 import { MiniWmsFleetOperation } from './MiniWmsFleetOperation'
 import { MiniWmsHomeZones } from './MiniWmsHomeZones'
+import { MiniWmsPalletVisibilityBridge } from './MiniWmsPalletVisibilityBridge'
 import { MiniWmsTruckCycleController } from './MiniWmsTruckCycleController'
+import { OutboundPilotRackLayer } from './OutboundPilotRackLayer'
 import { TrafficFlowMarkers } from './TrafficFlowMarkers'
 
 interface FleetOperationProps {
@@ -42,6 +44,8 @@ export function FleetOperation({
   return (
     <>
       <MiniWmsTruckCycleController />
+      <MiniWmsPalletVisibilityBridge plan={dispatchPlan} />
+      <OutboundPilotRackLayer layout={layout} locations={locations} />
       <TrafficFlowMarkers layout={layout} compact={compact} />
       <MiniWmsHomeZones vehicles={outboundPlan.vehicles} />
       <MiniWmsFleetOperation
