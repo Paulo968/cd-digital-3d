@@ -105,7 +105,7 @@ Eventos internos incluem registro de sistema, fila e execução de comandos, pau
 
 ## Experiência visual conectada
 
-A telemetria do kernel agora aparece no próprio modo Realista:
+A telemetria do kernel aparece no modo Realista:
 
 - velocidade de experiência em 1×, 2×, 4× e 8×;
 - pausa e avanço manual de um tick;
@@ -114,7 +114,7 @@ A telemetria do kernel agora aparece no próprio modo Realista:
 - progresso do caminhão atual;
 - câmera cinematográfica, visão geral, acompanhamento da RX20 e câmera da doca.
 
-A cena também ganhou trilha luminosa da RX20, beacon operacional, sinais pulsantes de doca, iluminação industrial e staging visível. Esses recursos não se tornam fonte da verdade; eles apenas representam dados do kernel e do sistema de recebimento.
+A cena também possui trilha luminosa da RX20, beacon operacional, sinais pulsantes de doca, iluminação industrial e staging visível. Esses recursos não se tornam fonte da verdade; apenas representam dados do kernel e do sistema de recebimento.
 
 ## Snapshot e restauração
 
