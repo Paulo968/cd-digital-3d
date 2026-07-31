@@ -1,9 +1,7 @@
 import type { WarehouseLayout } from '../domain/layout'
-import '../realistic-v2/compactStagingLayout'
-import '../realistic-v2/receivingPathRefinement'
+import '../realistic-v2/growingReceivingOperation'
 import type { WarehouseLocation } from '../domain/warehouse'
-import { CompactStagingLaneOverlay } from './CompactStagingLaneOverlay'
-import { RealisticWorldV2 } from './RealisticWorldV2'
+import { RealisticWorldV4 } from './RealisticWorldV4'
 
 interface RealisticEnvironmentProps {
   layout: WarehouseLayout
@@ -13,19 +11,13 @@ interface RealisticEnvironmentProps {
 }
 
 /**
- * O modo realista agora é um produto independente.
+ * O modo realista é independente do operacional.
  *
- * `layout`, `locations` e `animated` continuam na assinatura para manter a API
- * pública da cena estável, porém nenhuma regra, dimensão, câmera, equipamento ou
- * inventário do modo operacional é reutilizado pela Realistic V2.
+ * A V4 nasce com cinco ruas vazias, recebe pallets continuamente e preserva o
+ * staging entre caminhões para a futura etapa com transpaleteira.
  */
 export function RealisticEnvironment({
   compact,
 }: RealisticEnvironmentProps) {
-  return (
-    <>
-      <RealisticWorldV2 compact={compact} />
-      <CompactStagingLaneOverlay />
-    </>
-  )
+  return <RealisticWorldV4 compact={compact} />
 }
