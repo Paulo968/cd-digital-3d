@@ -9,6 +9,7 @@ import {
   chooseMiniWmsMissionForVehicle,
   createMiniWmsCycle,
   miniWmsEquipmentClass,
+  truckAllowsMiniWmsMission,
   vehicleCanExecuteMiniWmsMission,
 } from './miniWms'
 
@@ -85,6 +86,14 @@ const transfer = mission({
   eligibleKinds: ['pallet-jack'],
   sequence: 3,
 })
+const loadTruck = mission({
+  id: 'load-truck',
+  role: 'shipping',
+  source: stop('shipping-buffer:1', 'receiving'),
+  destination: stop('truck:1', 'truck'),
+  eligibleKinds: ['forklift'],
+  sequence: 4,
+})
 
 describe('mini WMS', () => {
   it('separa RX20, retrátil e transpaleteira por classe', () => {
@@ -123,6 +132,12 @@ describe('mini WMS', () => {
     })
 
     expect(selected?.id).toBe('transfer')
+  })
+
+  it('mantém o carregamento aguardando enquanto o caminhão está fora da doca', () => {
+    expect(truckAllowsMiniWmsMission(loadTruck, false)).toBe(false)
+    expect(truckAllowsMiniWmsMission(loadTruck, true)).toBe(true)
+    expect(truckAllowsMiniWmsMission(unload, false)).toBe(true)
   })
 
   it('gera IDs novos para cada ciclo operacional', () => {
