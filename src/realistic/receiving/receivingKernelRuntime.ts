@@ -8,6 +8,10 @@ import {
   type LivingWorldKernelSnapshot,
 } from '../core/livingWorldKernel'
 import {
+  WarehousePutawayFlowSystem,
+  type WarehousePutawayTelemetry,
+} from '../putaway/warehousePutawayFlowSystem'
+import {
   receivingExecutionPermit,
   type ReceivingExecutionPermit,
 } from '../tasks/receivingExecutionAuthority'
@@ -271,6 +275,7 @@ export class ReceivingKernelRuntime {
 
   private readonly system: ReceivingKernelSystem
   private readonly operationsSystem: ReceivingTaskResourceSystem
+  private readonly putawaySystem: WarehousePutawayFlowSystem
 
   constructor(
     config: ReceivingScenarioConfig,
@@ -292,6 +297,9 @@ export class ReceivingKernelRuntime {
       readReceivingState,
       config,
     )
+    const putawaySystem = new WarehousePutawayFlowSystem(() =>
+      operationsSystem.telemetry(),
+    )
     const receivingSystem = new ReceivingKernelSystem(config, fixedDelta, () =>
       receivingExecutionPermit(
         readReceivingState(),
@@ -302,9 +310,11 @@ export class ReceivingKernelRuntime {
 
     this.system = receivingSystem
     this.operationsSystem = operationsSystem
+    this.putawaySystem = putawaySystem
 
-    // A camada operacional decide primeiro; o motor só avança depois da licença.
+    // Operação e putaway decidem primeiro; o motor avança depois da licença.
     this.kernel.registerSystem(this.operationsSystem)
+    this.kernel.registerSystem(this.putawaySystem)
     this.kernel.registerSystem(this.system)
   }
 
@@ -357,6 +367,10 @@ export class ReceivingKernelRuntime {
 
   operations(): ReceivingOperationsTelemetry {
     return this.operationsSystem.telemetry()
+  }
+
+  putaway(): WarehousePutawayTelemetry {
+    return this.putawaySystem.telemetry()
   }
 
   executionPermit(): ReceivingExecutionPermit {
