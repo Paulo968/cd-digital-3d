@@ -135,7 +135,7 @@ export class ReceivingTaskResourceSystem implements KernelSystem {
       .sort((left, right) => left.sequence - right.sequence)
       .map(cloneTask)
     const activeTask = this.resource.taskId
-      ? this.tasks.get(this.resource.taskId) ?? null
+      ? tasks.find((task) => task.id === this.resource.taskId) ?? null
       : null
 
     return {
@@ -175,7 +175,7 @@ export class ReceivingTaskResourceSystem implements KernelSystem {
     this.taskSequence = snapshot.taskSequence
     this.tasks.clear()
     for (const task of snapshot.tasks) {
-      this.tasks.set(task.id, cloneTask(task))
+      this.tasks.set(task.palletId, cloneTask(task))
     }
     Object.assign(this.resource, cloneResource(snapshot.resource))
   }
