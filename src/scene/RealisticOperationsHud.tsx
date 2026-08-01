@@ -9,7 +9,7 @@ export type RealisticCameraMode = 'cinematic' | 'overview' | 'follow' | 'dock'
 interface RealisticOperationsHudProps {
   state: ReceivingSimulationState
   telemetry: KernelTelemetry
-  operations: ReceivingOperationsTelemetry
+  operations?: ReceivingOperationsTelemetry
   events: KernelEvent[]
   timeScale: number
   paused: boolean
@@ -100,7 +100,26 @@ export function RealisticOperationsHud({
   const carried = state.pallets.filter((pallet) => pallet.phase === 'carried').length
   const currentCompleted = Math.max(0, 6 - inTruck - carried)
   const currentProgress = Math.min(100, (currentCompleted / 6) * 100)
-  const activeTask = operations.activeTask
+  const resolvedOperations: ReceivingOperationsTelemetry = operations ?? {
+    tasks: [],
+    activeTask: null,
+    queued: inTruck,
+    executing: carried,
+    completed: staged,
+    reservedSlots: [],
+    resource: {
+      id: 'RX20-REC',
+      kind: 'counterbalance-forklift',
+      status:
+        carried > 0
+          ? 'busy'
+          : state.truck.phase === 'docked' && inTruck > 0
+            ? 'reserved'
+            : 'available',
+      taskId: null,
+    },
+  }
+  const activeTask = resolvedOperations.activeTask
   const recentEvents = events
     .filter((event) => !event.type.startsWith('kernel.'))
     .slice(-5)
@@ -226,7 +245,7 @@ export function RealisticOperationsHud({
             }}
           >
             <span>TAREFA OPERACIONAL</span>
-            <span>{operations.resource.id} · {RESOURCE_LABELS[operations.resource.status]}</span>
+            <span>{resolvedOperations.resource.id} · {RESOURCE_LABELS[resolvedOperations.resource.status]}</span>
           </div>
           <strong
             style={{
@@ -244,9 +263,9 @@ export function RealisticOperationsHud({
               : 'Aguardando tarefa válida e recurso livre'}
           </strong>
           <div style={{ marginTop: 5, display: 'flex', gap: 12, fontSize: 8, color: '#94a3b8' }}>
-            <span>Fila: {operations.queued}</span>
-            <span>Executando: {operations.executing}</span>
-            <span>Tarefas concluídas: {operations.completed}</span>
+            <span>Fila: {resolvedOperations.queued}</span>
+            <span>Executando: {resolvedOperations.executing}</span>
+            <span>Tarefas concluídas: {resolvedOperations.completed}</span>
           </div>
         </div>
 
@@ -355,7 +374,7 @@ export function RealisticOperationsHud({
           }}
         >
           <span style={{ fontSize: 9, color: state.fault ? '#fca5a5' : '#94a3b8' }}>
-            RX20: {state.forklift.phase} · {state.forklift.speed.toFixed(1)} m/s · {RESOURCE_LABELS[operations.resource.status]}
+            RX20: {state.forklift.phase} · {state.forklift.speed.toFixed(1)} m/s · {RESOURCE_LABELS[resolvedOperations.resource.status]}
           </span>
           <button type="button" onClick={onReset} style={buttonStyle(false)}>
             Reiniciar
