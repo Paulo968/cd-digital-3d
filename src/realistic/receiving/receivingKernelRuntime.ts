@@ -8,6 +8,10 @@ import {
   type LivingWorldKernelSnapshot,
 } from '../core/livingWorldKernel'
 import {
+  ReceivingTaskResourceSystem,
+  type ReceivingOperationsTelemetry,
+} from '../tasks/receivingTaskResourceSystem'
+import {
   ReceivingSimulation,
   type ReceivingPallet,
   type ReceivingScenarioConfig,
@@ -223,6 +227,7 @@ export class ReceivingKernelRuntime {
   readonly kernel: LivingWorldKernel
 
   private readonly system: ReceivingKernelSystem
+  private readonly operationsSystem: ReceivingTaskResourceSystem
 
   constructor(
     config: ReceivingScenarioConfig,
@@ -235,7 +240,12 @@ export class ReceivingKernelRuntime {
       maximumSubSteps: 12,
     })
     this.system = new ReceivingKernelSystem(config, fixedDelta)
+    this.operationsSystem = new ReceivingTaskResourceSystem(
+      () => this.system.read(),
+      config,
+    )
     this.kernel.registerSystem(this.system)
+    this.kernel.registerSystem(this.operationsSystem)
   }
 
   step(frameDelta: number): void {
@@ -261,7 +271,6 @@ export class ReceivingKernelRuntime {
   reset(): void {
     this.kernel.enqueueCommand({
       type: 'receiving.reset',
-      target: this.system.id,
     })
     this.kernel.stepOnce()
   }
@@ -284,6 +293,10 @@ export class ReceivingKernelRuntime {
 
   telemetry(): KernelTelemetry {
     return this.kernel.telemetry()
+  }
+
+  operations(): ReceivingOperationsTelemetry {
+    return this.operationsSystem.telemetry()
   }
 
   events(limit = 50): KernelEvent[] {
