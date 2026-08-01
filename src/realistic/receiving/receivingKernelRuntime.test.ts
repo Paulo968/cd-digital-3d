@@ -39,6 +39,29 @@ describe('ReceivingKernelRuntime', () => {
     expect(runtime.telemetry().tick).toBeGreaterThan(0)
   })
 
+  it('encadeia staging, TP-IN, buffer e retrátil até a Rua A', () => {
+    const runtime = createGrowingReceivingSimulation()
+
+    for (let frame = 0; frame < 160_000; frame += 1) {
+      runtime.step(1 / 30)
+      if (runtime.putaway().storedTotal >= 6) break
+    }
+
+    const putaway = runtime.putaway()
+    expect(putaway.storedTotal).toBeGreaterThanOrEqual(6)
+    const stored = putaway.units.filter((unit) => unit.status === 'stored')
+    expect(stored.length).toBeGreaterThanOrEqual(6)
+    expect(new Set(stored.map((unit) => unit.rackAddress)).size).toBe(stored.length)
+    expect(stored.every((unit) => unit.rackAddress?.startsWith('A-'))).toBe(true)
+
+    const eventTypes = new Set(runtime.events(1_500).map((event) => event.type))
+    expect(eventTypes.has('putaway.task.created')).toBe(true)
+    expect(eventTypes.has('tp-in.task.started')).toBe(true)
+    expect(eventTypes.has('tp-in.task.completed')).toBe(true)
+    expect(eventTypes.has('reach-put.task.started')).toBe(true)
+    expect(eventTypes.has('putaway.completed')).toBe(true)
+  })
+
   it('bloqueia a RX20 quando não existe vaga reservável', () => {
     const runtime = createReceivingKernelRuntime({
       ...GROWING_RECEIVING_CONFIG,
@@ -103,6 +126,7 @@ describe('ReceivingKernelRuntime', () => {
       state: runtime.snapshot(),
       telemetry: runtime.telemetry(),
       operations: runtime.operations(),
+      putaway: runtime.putaway(),
       permit: runtime.executionPermit(),
       events: runtime.events(120),
     }
@@ -115,6 +139,7 @@ describe('ReceivingKernelRuntime', () => {
       state: runtime.snapshot(),
       telemetry: runtime.telemetry(),
       operations: runtime.operations(),
+      putaway: runtime.putaway(),
       permit: runtime.executionPermit(),
       events: runtime.events(120),
     }
@@ -124,7 +149,7 @@ describe('ReceivingKernelRuntime', () => {
 
   it('reinicia por comando do kernel e mantém rastreabilidade', () => {
     const runtime = createGrowingReceivingSimulation()
-    for (let index = 0; index < 900; index += 1) runtime.step(1 / 30)
+    for (let index = 0; index < 3_000; index += 1) runtime.step(1 / 30)
     expect(runtime.telemetry().tick).toBeGreaterThan(0)
 
     runtime.reset()
@@ -133,11 +158,16 @@ describe('ReceivingKernelRuntime', () => {
     expect(runtime.read().completedTrucks).toBe(0)
     expect(runtime.operations().tasks).toHaveLength(6)
     expect(runtime.operations().completed).toBe(0)
+    expect(runtime.putaway().storedTotal).toBe(0)
+    expect(runtime.putaway().units).toHaveLength(0)
     expect(runtime.events().some((event) => event.type === 'receiving.reset')).toBe(
       true,
     )
     expect(
       runtime.events().some((event) => event.type === 'receiving.operations.reset'),
+    ).toBe(true)
+    expect(
+      runtime.events().some((event) => event.type === 'warehouse.putaway.reset'),
     ).toBe(true)
   })
 })
