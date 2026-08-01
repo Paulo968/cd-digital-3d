@@ -2,6 +2,7 @@ import { Text, Trail } from '@react-three/drei'
 import { useFrame, useThree } from '@react-three/fiber'
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -9,17 +10,21 @@ import {
   type MutableRefObject,
 } from 'react'
 import * as THREE from 'three'
-import type { KernelEvent, KernelTelemetry } from '../realistic/core/livingWorldKernel'
+import type { WarehouseLayout } from '../domain/layout'
+import type {
+  KernelEvent,
+  KernelTelemetry,
+} from '../realistic/core/livingWorldKernel'
 import {
-  EMPTY_WAREHOUSE_V3,
-  GROWING_RECEIVING_CONFIG,
-  GROWING_STAGING,
-  createGrowingReceivingSimulation,
-  growingStagingPoint,
-} from '../realistic-v2/growingReceivingOperation'
+  createLayoutReceivingRuntime,
+  createLayoutReceivingScenario,
+  type LayoutReceivingScenario,
+} from '../realistic/layoutReceivingScenario'
 import {
+  stagingPoint,
   truckPalletPoint,
   type ReceivingPallet,
+  type ReceivingScenarioConfig,
   type ReceivingSimulationState,
 } from '../realistic-v2/receivingSimulation'
 import { ForkliftModel } from './ForkliftModel'
@@ -31,15 +36,18 @@ import {
 const DEFAULT_TIME_SCALE = 2
 const HUD_REFRESH_SECONDS = 0.18
 
-type ReceivingRuntime = ReturnType<typeof createGrowingReceivingSimulation>
+type ReceivingRuntime = ReturnType<typeof createLayoutReceivingRuntime>
 
 type CameraControls = {
   target?: THREE.Vector3
   update?: () => void
 }
 
-function createExperienceRuntime(timeScale = DEFAULT_TIME_SCALE): ReceivingRuntime {
-  const runtime = createGrowingReceivingSimulation()
+function createExperienceRuntime(
+  scenario: LayoutReceivingScenario,
+  timeScale = DEFAULT_TIME_SCALE,
+): ReceivingRuntime {
+  const runtime = createLayoutReceivingRuntime(scenario)
   runtime.setTimeScale(timeScale)
   return runtime
 }
@@ -66,9 +74,11 @@ function Pallet({ color }: { color: string }) {
 function Truck({
   groupRef,
   state,
+  config,
 }: {
   groupRef: MutableRefObject<THREE.Group | null>
   state: ReceivingSimulationState
+  config: ReceivingScenarioConfig
 }) {
   return (
     <group ref={groupRef} position={[0, 0, state.truck.z]}>
@@ -88,15 +98,28 @@ function Truck({
       </mesh>
       <mesh position={[0, 1.2, 8.1]} castShadow>
         <boxGeometry args={[3.35, 2.4, 3]} />
-        <meshStandardMaterial color="#16a34a" metalness={0.18} roughness={0.44} />
+        <meshStandardMaterial
+          color="#16a34a"
+          metalness={0.18}
+          roughness={0.44}
+        />
       </mesh>
       <mesh position={[0, 1.68, 9.59]}>
         <boxGeometry args={[2.75, 0.92, 0.08]} />
-        <meshStandardMaterial color="#07111f" metalness={0.52} roughness={0.18} />
+        <meshStandardMaterial
+          color="#07111f"
+          metalness={0.52}
+          roughness={0.18}
+        />
       </mesh>
       {[-1.68, 1.68].flatMap((x) =>
         [-4.5, 3.3, 7.65].map((z) => (
-          <mesh key={`${x}-${z}`} position={[x, 0.48, z]} rotation={[0, 0, Math.PI / 2]} castShadow>
+          <mesh
+            key={`${x}-${z}`}
+            position={[x, 0.48, z]}
+            rotation={[0, 0, Math.PI / 2]}
+            castShadow
+          >
             <cylinderGeometry args={[0.48, 0.48, 0.34, 18]} />
             <meshStandardMaterial color="#0f172a" roughness={0.92} />
           </mesh>
@@ -111,15 +134,11 @@ function Truck({
       {state.pallets
         .filter((pallet) => pallet.phase === 'truck')
         .map((pallet) => {
-          const point = truckPalletPoint(pallet.index, GROWING_RECEIVING_CONFIG)
+          const point = truckPalletPoint(pallet.index, config)
           return (
             <group
               key={pallet.id}
-              position={[
-                point.x,
-                0.32,
-                point.z - GROWING_RECEIVING_CONFIG.truckDockZ,
-              ]}
+              position={[point.x, 0.32, point.z - config.truckDockZ]}
             >
               <Pallet color={pallet.color} />
             </group>
@@ -129,13 +148,19 @@ function Truck({
   )
 }
 
-function StagedPallets({ pallets }: { pallets: ReceivingPallet[] }) {
+function StagedPallets({
+  pallets,
+  config,
+}: {
+  pallets: ReceivingPallet[]
+  config: ReceivingScenarioConfig
+}) {
   return (
     <>
       {pallets
         .filter((pallet) => pallet.phase === 'staged')
         .map((pallet) => {
-          const point = growingStagingPoint(pallet.stagedSlot ?? 0)
+          const point = stagingPoint(pallet.stagedSlot ?? 0, config)
           return (
             <group key={pallet.id} position={[point.x, 0.17, point.z]}>
               <Pallet color={pallet.color} />
@@ -146,22 +171,17 @@ function StagedPallets({ pallets }: { pallets: ReceivingPallet[] }) {
   )
 }
 
-function StagingSlots() {
-  const visibleSlots = useMemo(
-    () => Array.from({ length: 32 }, (_, index) => ({ index, ...growingStagingPoint(index) })),
-    [],
-  )
-
+function StagingSlots({ scenario }: { scenario: LayoutReceivingScenario }) {
   return (
     <group>
-      {visibleSlots.map((slot) => (
-        <group key={slot.index} position={[slot.x, 0.025, slot.z]}>
+      {scenario.stagingPoints.map((slot, index) => (
+        <group key={index} position={[slot.x, 0.025, slot.z]}>
           <mesh rotation={[-Math.PI / 2, 0, 0]}>
-            <planeGeometry args={[3.7, 3.35]} />
+            <planeGeometry args={[3.35, 2.65]} />
             <meshBasicMaterial
-              color={slot.index < 8 ? '#22c55e' : '#0ea5e9'}
+              color="#22c55e"
               transparent
-              opacity={0.08}
+              opacity={0.12}
               side={THREE.DoubleSide}
             />
           </mesh>
@@ -169,49 +189,31 @@ function StagingSlots() {
             position={[0, 0.045, 0]}
             rotation={[-Math.PI / 2, 0, 0]}
             fontSize={0.22}
-            color="#94a3b8"
+            color="#bbf7d0"
           >
-            D{String(slot.index + 1).padStart(2, '0')}
+            IN-{String(index + 1).padStart(2, '0')}
           </Text>
         </group>
       ))}
+      <Text
+        position={[-2, 0.06, scenario.config.stagingZ - 2.2]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        fontSize={0.34}
+        color="#86efac"
+      >
+        STAGING RECEBIMENTO
+      </Text>
     </group>
   )
 }
 
-function FlowMarkers() {
-  const groupRef = useRef<THREE.Group | null>(null)
-  const count = 12
-  const startZ = GROWING_STAGING.futureTranspalletEntryZ
-  const endZ = GROWING_STAGING.approachZ
-  const span = Math.abs(endZ - startZ)
-
-  useFrame(({ clock }) => {
-    const group = groupRef.current
-    if (!group) return
-    const offset = (clock.elapsedTime * 7.5) % span
-    group.children.forEach((child, index) => {
-      child.position.z = startZ + ((offset + index * (span / count)) % span)
-    })
-  })
-
-  return (
-    <group ref={groupRef}>
-      {Array.from({ length: count }, (_, index) => (
-        <mesh
-          key={index}
-          position={[GROWING_STAGING.futureTranspalletLaneCenterX, 0.055, startZ]}
-          rotation={[-Math.PI / 2, 0, 0]}
-        >
-          <circleGeometry args={[0.22, 18]} />
-          <meshBasicMaterial color="#22d3ee" transparent opacity={0.72} />
-        </mesh>
-      ))}
-    </group>
-  )
-}
-
-function DockSignals({ active }: { active: boolean }) {
+function DockSignals({
+  active,
+  dockWallZ,
+}: {
+  active: boolean
+  dockWallZ: number
+}) {
   const leftRef = useRef<THREE.Mesh | null>(null)
   const rightRef = useRef<THREE.Mesh | null>(null)
 
@@ -225,18 +227,32 @@ function DockSignals({ active }: { active: boolean }) {
   })
 
   return (
-    <group position={[0, 3.5, GROWING_RECEIVING_CONFIG.dockWallZ - 0.32]}>
+    <group position={[0, 3.5, dockWallZ - 0.32]}>
       {[-5.2, 5.2].map((x, index) => (
-        <mesh key={x} ref={index === 0 ? leftRef : rightRef} position={[x, 0, 0]}>
+        <mesh
+          key={x}
+          ref={index === 0 ? leftRef : rightRef}
+          position={[x, 0, 0]}
+        >
           <sphereGeometry args={[0.22, 18, 18]} />
-          <meshBasicMaterial color={active ? '#22c55e' : '#f59e0b'} transparent opacity={0.4} />
+          <meshBasicMaterial
+            color={active ? '#22c55e' : '#f59e0b'}
+            transparent
+            opacity={0.4}
+          />
         </mesh>
       ))}
     </group>
   )
 }
 
-function ForkliftBeacon({ faulted, moving }: { faulted: boolean; moving: boolean }) {
+function ForkliftBeacon({
+  faulted,
+  moving,
+}: {
+  faulted: boolean
+  moving: boolean
+}) {
   const ringRef = useRef<THREE.Mesh | null>(null)
 
   useFrame(({ clock }) => {
@@ -249,160 +265,173 @@ function ForkliftBeacon({ faulted, moving }: { faulted: boolean; moving: boolean
   const color = faulted ? '#ef4444' : moving ? '#22d3ee' : '#f59e0b'
   return (
     <group>
-      <mesh ref={ringRef} position={[0, 0.035, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh
+        ref={ringRef}
+        position={[0, 0.035, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+      >
         <ringGeometry args={[1.28, 1.42, 42]} />
-        <meshBasicMaterial color={color} transparent opacity={0.72} side={THREE.DoubleSide} />
+        <meshBasicMaterial
+          color={color}
+          transparent
+          opacity={0.72}
+          side={THREE.DoubleSide}
+        />
       </mesh>
-      <pointLight position={[0, 2.5, 0]} color={color} intensity={moving ? 1.2 : 0.45} distance={7} />
+      <pointLight
+        position={[0, 2.5, 0]}
+        color={color}
+        intensity={moving ? 1.2 : 0.45}
+        distance={7}
+      />
     </group>
   )
 }
 
-function Warehouse({ truckDocked }: { truckDocked: boolean }) {
-  const config = GROWING_RECEIVING_CONFIG
-  const front = config.dockWallZ
-  const back = EMPTY_WAREHOUSE_V3.backWallZ
-  const depth = front - back
-  const center = (front + back) / 2
-  const rackCenter =
-    (EMPTY_WAREHOUSE_V3.rackStartZ + EMPTY_WAREHOUSE_V3.rackEndZ) / 2
-  const rackLength = Math.abs(
-    EMPTY_WAREHOUSE_V3.rackEndZ - EMPTY_WAREHOUSE_V3.rackStartZ,
+function DockDoor({
+  x,
+  z,
+  label,
+  color,
+}: {
+  x: number
+  z: number
+  label: string
+  color: string
+}) {
+  return (
+    <group position={[x, 0, z]}>
+      <mesh position={[0, 3.25, 0]} castShadow>
+        <boxGeometry args={[6.6, 6.5, 0.35]} />
+        <meshStandardMaterial color="#111827" roughness={0.74} />
+      </mesh>
+      <mesh position={[0, 3.2, -0.2]}>
+        <boxGeometry args={[5.5, 5.2, 0.18]} />
+        <meshStandardMaterial color="#475569" roughness={0.7} />
+      </mesh>
+      <mesh position={[0, 0.28, 0.65]} castShadow>
+        <boxGeometry args={[5.8, 0.42, 2.4]} />
+        <meshStandardMaterial color="#1f2937" metalness={0.45} />
+      </mesh>
+      {[-3.25, 3.25].map((guideX) => (
+        <mesh key={guideX} position={[guideX, 0.25, 3.4]}>
+          <boxGeometry args={[0.22, 0.24, 7]} />
+          <meshStandardMaterial color="#facc15" />
+        </mesh>
+      ))}
+      <Text position={[0, 7.2, -0.15]} fontSize={0.52} color={color}>
+        {label}
+      </Text>
+    </group>
   )
-  const laneCenterZ =
-    (GROWING_STAGING.futureTranspalletEntryZ + GROWING_STAGING.approachZ) / 2
-  const laneDepth = Math.abs(
-    GROWING_STAGING.futureTranspalletEntryZ - GROWING_STAGING.approachZ,
-  )
+}
+
+function SharedWarehouseInfrastructure({
+  layout,
+  scenario,
+}: {
+  layout: WarehouseLayout
+  scenario: LayoutReceivingScenario
+}) {
+  const halfWidth = layout.floor.width / 2
+  const halfDepth = layout.floor.depth / 2
+  const wallHeight = 10.5
+  const yardDepth = 24
+  const receivingX = scenario.receivingZone.origin.x
+  const shippingX = scenario.shippingZone.origin.x
 
   return (
     <group>
-      <hemisphereLight args={['#dbeafe', '#111827', 1.15]} />
-      <directionalLight position={[35, 48, 26]} intensity={1.2} castShadow />
-      <spotLight
-        position={[0, 12, 35]}
-        target-position={[0, 0, 30]}
-        color="#dbeafe"
-        intensity={95}
-        distance={38}
-        angle={0.72}
-        penumbra={0.7}
-      />
-
-      <mesh position={[0, -0.08, center]} receiveShadow>
-        <boxGeometry args={[config.floorWidth, 0.16, depth]} />
-        <meshStandardMaterial color="#1b2632" roughness={0.88} metalness={0.08} />
+      <mesh position={[0, -0.09, halfDepth + yardDepth / 2]} receiveShadow>
+        <boxGeometry args={[layout.floor.width + 24, 0.16, yardDepth]} />
+        <meshStandardMaterial color="#171f29" roughness={0.94} />
       </mesh>
-      <gridHelper args={[150, 75, '#334155', '#243445']} position={[0, 0.01, center]} />
 
-      {[-config.floorWidth / 2, config.floorWidth / 2].map((x) => (
-        <mesh key={x} position={[x, 5.3, center]} castShadow>
-          <boxGeometry args={[0.34, 10.6, depth]} />
-          <meshStandardMaterial color="#94a3b8" roughness={0.86} />
+      <mesh position={[0, wallHeight / 2, -halfDepth]} castShadow>
+        <boxGeometry args={[layout.floor.width, wallHeight, 0.36]} />
+        <meshStandardMaterial color="#cbd5e1" roughness={0.84} />
+      </mesh>
+      {[-halfWidth, halfWidth].map((x) => (
+        <mesh key={x} position={[x, wallHeight / 2, 0]} castShadow>
+          <boxGeometry args={[0.36, wallHeight, layout.floor.depth]} />
+          <meshStandardMaterial color="#b8c4d1" roughness={0.84} />
         </mesh>
       ))}
-      <mesh position={[0, 5.3, back]} castShadow>
-        <boxGeometry args={[config.floorWidth, 10.6, 0.34]} />
+      <mesh position={[0, 9.1, halfDepth]} castShadow>
+        <boxGeometry args={[layout.floor.width, 2.8, 0.36]} />
         <meshStandardMaterial color="#cbd5e1" roughness={0.84} />
       </mesh>
 
-      {[-18, -46, -74, -102].map((z) => (
-        <group key={z} position={[0, 9.1, z]}>
+      {Array.from(
+        { length: Math.max(3, Math.floor(layout.floor.depth / 18)) },
+        (_, index) => -halfDepth + 9 + index * 18,
+      ).map((z) => (
+        <group key={z} position={[0, 9.25, z]}>
           <mesh>
-            <boxGeometry args={[72, 0.12, 0.32]} />
-            <meshStandardMaterial color="#e2e8f0" emissive="#bae6fd" emissiveIntensity={1.5} />
+            <boxGeometry args={[layout.floor.width - 4, 0.16, 0.34]} />
+            <meshStandardMaterial
+              color="#e2e8f0"
+              emissive="#bae6fd"
+              emissiveIntensity={0.7}
+            />
           </mesh>
-        </group>
-      ))}
-
-      <group position={[0, 0, config.dockWallZ]}>
-        <mesh position={[-31, 4.75, 0]} castShadow>
-          <boxGeometry args={[50, 9.5, 0.34]} />
-          <meshStandardMaterial color="#cbd5e1" roughness={0.84} />
-        </mesh>
-        <mesh position={[31, 4.75, 0]} castShadow>
-          <boxGeometry args={[50, 9.5, 0.34]} />
-          <meshStandardMaterial color="#cbd5e1" roughness={0.84} />
-        </mesh>
-        <mesh position={[0, 8, 0]} castShadow>
-          <boxGeometry args={[12, 3, 0.34]} />
-          <meshStandardMaterial color="#cbd5e1" roughness={0.84} />
-        </mesh>
-        {[-5.15, 5.15].map((x) => (
-          <mesh key={x} position={[x, 0.55, -0.34]} castShadow>
-            <boxGeometry args={[0.48, 1.1, 0.75]} />
-            <meshStandardMaterial color="#111827" roughness={0.72} />
-          </mesh>
-        ))}
-        <Text position={[0, 7.35, -0.2]} fontSize={0.7} color="#0f172a">
-          DOCA 01 · RECEBIMENTO
-        </Text>
-      </group>
-      <DockSignals active={truckDocked} />
-
-      <mesh
-        position={[
-          GROWING_STAGING.futureTranspalletLaneCenterX,
-          0.025,
-          laneCenterZ,
-        ]}
-      >
-        <boxGeometry args={[GROWING_STAGING.futureTranspalletLaneWidth, 0.03, laneDepth]} />
-        <meshStandardMaterial color="#0284c7" emissive="#0369a1" emissiveIntensity={0.35} transparent opacity={0.2} />
-      </mesh>
-      <FlowMarkers />
-      <Text
-        position={[
-          GROWING_STAGING.futureTranspalletLaneCenterX,
-          0.07,
-          laneCenterZ,
-        ]}
-        rotation={[-Math.PI / 2, 0, 0]}
-        fontSize={0.38}
-        color="#7dd3fc"
-      >
-        CORREDOR TP-IN · PRÓXIMA EVOLUÇÃO
-      </Text>
-      <StagingSlots />
-
-      {EMPTY_WAREHOUSE_V3.rackRowXs.map((x) => (
-        <group key={x}>
-          {Array.from({ length: 8 }, (_, index) => {
-            const z = EMPTY_WAREHOUSE_V3.rackStartZ - (rackLength * index) / 7
-            return (
-              <mesh key={z} position={[x, 3.5, z]} castShadow>
-                <boxGeometry args={[1.8, 7, 0.16]} />
-                <meshStandardMaterial color="#1f2937" metalness={0.62} roughness={0.34} />
-              </mesh>
-            )
-          })}
-          {[1.55, 3.25, 4.95, 6.65].map((y) => (
-            <mesh key={y} position={[x, y, rackCenter]} castShadow>
-              <boxGeometry args={[1.9, 0.16, rackLength]} />
-              <meshStandardMaterial color="#f97316" metalness={0.35} roughness={0.42} />
-            </mesh>
+          {[-halfWidth * 0.55, 0, halfWidth * 0.55].map((x) => (
+            <pointLight
+              key={x}
+              position={[x, -0.55, 0]}
+              color="#e0f2fe"
+              intensity={6}
+              distance={24}
+            />
           ))}
         </group>
       ))}
 
-      {EMPTY_WAREHOUSE_V3.aisleNames.map((name, index) => {
-        const left = EMPTY_WAREHOUSE_V3.rackRowXs[index]
-        const right = EMPTY_WAREHOUSE_V3.rackRowXs[index + 1]
-        return (
-          <Text
-            key={name}
-            position={[(left + right) / 2, 0.07, EMPTY_WAREHOUSE_V3.rackStartZ + 3]}
-            rotation={[-Math.PI / 2, 0, 0]}
-            fontSize={0.48}
-            color="#bae6fd"
-          >
-            {name}
-          </Text>
-        )
-      })}
+      <DockDoor
+        x={receivingX}
+        z={halfDepth}
+        label="DOCA INBOUND"
+        color="#86efac"
+      />
+      <DockDoor
+        x={shippingX}
+        z={halfDepth}
+        label="DOCA OUTBOUND"
+        color="#7dd3fc"
+      />
 
-      <Text position={[0, 8.5, -78]} fontSize={1.05} color="#e2e8f0">
-        CD REALISTA · OPERAÇÃO VIVA
+      <group position={[shippingX, 0.03, halfDepth - 10]}>
+        <mesh>
+          <boxGeometry args={[18, 0.035, 10]} />
+          <meshStandardMaterial
+            color="#0284c7"
+            transparent
+            opacity={0.2}
+          />
+        </mesh>
+        <Text
+          position={[0, 0.05, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+          fontSize={0.44}
+          color="#bae6fd"
+        >
+          STAGING EXPEDIÇÃO
+        </Text>
+      </group>
+
+      <group position={[shippingX, 0, halfDepth + 8]}>
+        <mesh position={[0, 1.05, 0]} castShadow>
+          <boxGeometry args={[3.3, 2.1, 3.2]} />
+          <meshStandardMaterial color="#2563eb" roughness={0.45} />
+        </mesh>
+        <mesh position={[0, 2.2, -4.6]} castShadow>
+          <boxGeometry args={[4.5, 4.2, 9]} />
+          <meshStandardMaterial color="#e2e8f0" roughness={0.65} />
+        </mesh>
+      </group>
+
+      <Text position={[0, 10.8, -halfDepth + 1]} fontSize={0.9} color="#e2e8f0">
+        {layout.name.toUpperCase()} · MESMA PLANTA OPERACIONAL
       </Text>
     </group>
   )
@@ -413,14 +442,29 @@ function effectiveCameraMode(
   state: ReceivingSimulationState,
 ): Exclude<RealisticCameraMode, 'cinematic'> {
   if (selected !== 'cinematic') return selected
-  if (state.truck.phase === 'arriving' || state.truck.phase === 'departing') return 'dock'
+  if (state.truck.phase === 'arriving' || state.truck.phase === 'departing') {
+    return 'dock'
+  }
   if (state.forklift.phase === 'parked') return 'overview'
   return 'follow'
 }
 
-export function RealisticReceivingWorld({ compact }: { compact: boolean }) {
+export function RealisticReceivingWorld({
+  layout,
+  compact,
+}: {
+  layout: WarehouseLayout
+  compact: boolean
+}) {
+  const scenario = useMemo(
+    () => createLayoutReceivingScenario(layout),
+    [layout],
+  )
   const engineRef = useRef<ReceivingRuntime | null>(null)
-  if (!engineRef.current) engineRef.current = createExperienceRuntime()
+  const scenarioIdRef = useRef(scenario.id)
+  if (!engineRef.current) {
+    engineRef.current = createExperienceRuntime(scenario)
+  }
 
   const forkliftRef = useRef<THREE.Group | null>(null)
   const carriageRef = useRef<THREE.Group | null>(null)
@@ -433,10 +477,13 @@ export function RealisticReceivingWorld({ compact }: { compact: boolean }) {
   const [telemetry, setTelemetry] = useState<KernelTelemetry>(() =>
     engineRef.current!.telemetry(),
   )
-  const [events, setEvents] = useState<KernelEvent[]>(() => engineRef.current!.events(16))
+  const [events, setEvents] = useState<KernelEvent[]>(() =>
+    engineRef.current!.events(16),
+  )
   const [timeScale, setTimeScaleState] = useState(DEFAULT_TIME_SCALE)
   const [paused, setPaused] = useState(false)
-  const [cameraMode, setCameraMode] = useState<RealisticCameraMode>('cinematic')
+  const [cameraMode, setCameraMode] =
+    useState<RealisticCameraMode>('cinematic')
 
   const { camera, invalidate } = useThree()
   const get = useThree((state) => state.get)
@@ -450,25 +497,41 @@ export function RealisticReceivingWorld({ compact }: { compact: boolean }) {
   }, [])
 
   const centerCamera = useCallback(() => {
-    camera.position.set(compact ? 38 : 48, compact ? 30 : 38, compact ? 56 : 66)
+    const width = layout.floor.width
+    const depth = layout.floor.depth
+    camera.position.set(
+      compact ? width * 0.42 : width * 0.56,
+      compact ? 30 : Math.max(38, depth * 0.46),
+      compact ? depth * 0.68 : depth * 0.78,
+    )
     const controls = get().controls as CameraControls | undefined
-    controls?.target?.set(0, 2.2, -18)
+    controls?.target?.set(0, 2.5, 0)
     controls?.update?.()
     invalidate()
-  }, [camera, compact, get, invalidate])
+  }, [camera, compact, get, invalidate, layout.floor.depth, layout.floor.width])
 
   useLayoutEffect(() => {
-    const timer = window.setTimeout(centerCamera, 250)
+    const timer = window.setTimeout(centerCamera, 220)
     return () => window.clearTimeout(timer)
   }, [centerCamera])
 
-  const reset = useCallback(() => {
-    engineRef.current = createExperienceRuntime(timeScale)
+  useEffect(() => {
+    if (scenarioIdRef.current === scenario.id) return
+    scenarioIdRef.current = scenario.id
+    engineRef.current = createExperienceRuntime(scenario, timeScale)
     hudAccumulatorRef.current = 0
     setPaused(false)
     refreshPresentation()
     centerCamera()
-  }, [centerCamera, refreshPresentation, timeScale])
+  }, [centerCamera, refreshPresentation, scenario, timeScale])
+
+  const reset = useCallback(() => {
+    engineRef.current = createExperienceRuntime(scenario, timeScale)
+    hudAccumulatorRef.current = 0
+    setPaused(false)
+    refreshPresentation()
+    centerCamera()
+  }, [centerCamera, refreshPresentation, scenario, timeScale])
 
   const changeTimeScale = useCallback((scale: number) => {
     const runtime = engineRef.current
@@ -509,26 +572,40 @@ export function RealisticReceivingWorld({ compact }: { compact: boolean }) {
       )
       forkliftRef.current.rotation.y = state.forklift.heading
     }
-    if (carriageRef.current) carriageRef.current.position.y = state.forklift.forkHeight
+    if (carriageRef.current) {
+      carriageRef.current.position.y = state.forklift.forkHeight
+    }
     if (truckRef.current) truckRef.current.position.z = state.truck.z
 
     const activeMode = effectiveCameraMode(cameraMode, state)
     const desiredCamera = desiredCameraRef.current
     const desiredTarget = desiredTargetRef.current
+    const worldForkliftX = state.forklift.position.x + scenario.offset.x
+    const worldForkliftZ = state.forklift.position.z + scenario.offset.z
+    const dockWorldX = scenario.offset.x
+    const dockWorldZ = scenario.inboundDockZ
 
     if (activeMode === 'follow') {
       desiredCamera.set(
-        state.forklift.position.x + (compact ? 8 : 11),
+        worldForkliftX + (compact ? 8 : 11),
         compact ? 7 : 9,
-        state.forklift.position.z + (compact ? 11 : 15),
+        worldForkliftZ + (compact ? 11 : 15),
       )
-      desiredTarget.set(state.forklift.position.x, 1.35, state.forklift.position.z)
+      desiredTarget.set(worldForkliftX, 1.35, worldForkliftZ)
     } else if (activeMode === 'dock') {
-      desiredCamera.set(compact ? 17 : 23, compact ? 12 : 16, 48)
-      desiredTarget.set(0, 1.8, 31)
+      desiredCamera.set(
+        dockWorldX + (compact ? 15 : 20),
+        compact ? 12 : 16,
+        dockWorldZ + (compact ? 20 : 27),
+      )
+      desiredTarget.set(dockWorldX, 1.8, dockWorldZ + 2)
     } else {
-      desiredCamera.set(compact ? 38 : 48, compact ? 30 : 38, compact ? 56 : 66)
-      desiredTarget.set(0, 2.2, -18)
+      desiredCamera.set(
+        compact ? layout.floor.width * 0.42 : layout.floor.width * 0.56,
+        compact ? 30 : Math.max(38, layout.floor.depth * 0.46),
+        compact ? layout.floor.depth * 0.68 : layout.floor.depth * 0.78,
+      )
+      desiredTarget.set(0, 2.5, 0)
     }
 
     const smoothing = 1 - Math.exp(-delta * 2.8)
@@ -552,39 +629,58 @@ export function RealisticReceivingWorld({ compact }: { compact: boolean }) {
 
   return (
     <>
-      <Warehouse truckDocked={snapshot.truck.phase === 'docked'} />
-      <Truck groupRef={truckRef} state={snapshot} />
-      <StagedPallets pallets={snapshot.pallets} />
-      <Trail
-        width={0.55}
-        length={7}
-        color={snapshot.fault ? '#ef4444' : '#22d3ee'}
-        attenuation={(value) => value * value}
-      >
-        <group ref={forkliftRef}>
-          <ForkliftBeacon faulted={Boolean(snapshot.fault)} moving={moving} />
-          <ForkliftModel
-            carriageRef={carriageRef}
-            mastHeight={3.3}
-            compact={compact}
-            cargoVisible={Boolean(carried)}
-            cargoColor={carried?.color ?? '#38bdf8'}
-            reportRuntimePose={false}
-            accent="#16a34a"
-            emergencyBraking={Boolean(snapshot.fault)}
-            faulted={Boolean(snapshot.fault)}
-          />
-          <Text
-            position={[0, 3.25, 0]}
-            fontSize={0.32}
-            color="#dcfce7"
-            outlineWidth={0.02}
-            outlineColor="#052e16"
-          >
-            RX 20-20 · RECEBIMENTO
-          </Text>
-        </group>
-      </Trail>
+      <SharedWarehouseInfrastructure layout={layout} scenario={scenario} />
+
+      <group position={[scenario.offset.x, 0, scenario.offset.z]}>
+        <DockSignals
+          active={snapshot.truck.phase === 'docked'}
+          dockWallZ={scenario.config.dockWallZ}
+        />
+        <StagingSlots scenario={scenario} />
+        <Truck
+          groupRef={truckRef}
+          state={snapshot}
+          config={scenario.config}
+        />
+        <StagedPallets
+          pallets={snapshot.pallets}
+          config={scenario.config}
+        />
+        <Trail
+          width={0.55}
+          length={7}
+          color={snapshot.fault ? '#ef4444' : '#22d3ee'}
+          attenuation={(value) => value * value}
+        >
+          <group ref={forkliftRef}>
+            <ForkliftBeacon
+              faulted={Boolean(snapshot.fault)}
+              moving={moving}
+            />
+            <ForkliftModel
+              carriageRef={carriageRef}
+              mastHeight={3.3}
+              compact={compact}
+              cargoVisible={Boolean(carried)}
+              cargoColor={carried?.color ?? '#38bdf8'}
+              reportRuntimePose={false}
+              accent="#16a34a"
+              emergencyBraking={Boolean(snapshot.fault)}
+              faulted={Boolean(snapshot.fault)}
+            />
+            <Text
+              position={[0, 3.25, 0]}
+              fontSize={0.32}
+              color="#dcfce7"
+              outlineWidth={0.02}
+              outlineColor="#052e16"
+            >
+              RX 20-20 · RECEBIMENTO
+            </Text>
+          </group>
+        </Trail>
+      </group>
+
       <RealisticOperationsHud
         state={snapshot}
         telemetry={telemetry}

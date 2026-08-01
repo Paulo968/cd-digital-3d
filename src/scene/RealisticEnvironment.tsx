@@ -1,6 +1,5 @@
 import type { WarehouseLayout } from '../domain/layout'
 import type { WarehouseLocation } from '../domain/warehouse'
-import { RealisticOperationZones } from './RealisticOperationZones'
 import { RealisticReceivingWorld } from './RealisticReceivingWorld'
 import { RealisticSceneIsolation } from './RealisticSceneIsolation'
 
@@ -12,20 +11,17 @@ interface RealisticEnvironmentProps {
 }
 
 /**
- * O modo realista permanece isolado do estoque operacional.
- *
- * A primeira célula usa um cenário explícito e um motor configurável, sem
- * alterar prototypes ou constantes globais durante imports. As zonas físicas
- * seguintes aparecem como mapa de evolução e ainda não fabricam movimentos ou
- * confirmações que o kernel não executou.
+ * O modo realista usa a mesma planta, ruas, posições e porta-paletes do modo
+ * operacional. Esta camada acrescenta somente infraestrutura física, docas,
+ * staging, veículos, iluminação e a operação simulada ao redor do layout.
  */
 export function RealisticEnvironment({
+  layout,
   compact,
 }: RealisticEnvironmentProps) {
   return (
     <RealisticSceneIsolation>
-      <RealisticOperationZones />
-      <RealisticReceivingWorld compact={compact} />
+      <RealisticReceivingWorld layout={layout} compact={compact} />
     </RealisticSceneIsolation>
   )
 }
