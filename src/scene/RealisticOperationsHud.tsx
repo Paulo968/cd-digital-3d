@@ -1,6 +1,7 @@
 import { Html } from '@react-three/drei'
 import type { CSSProperties } from 'react'
 import type { KernelEvent, KernelTelemetry } from '../realistic/core/livingWorldKernel'
+import type { ReceivingOperationsTelemetry } from '../realistic/tasks/receivingTaskResourceSystem'
 import type { ReceivingSimulationState } from '../realistic-v2/receivingSimulation'
 
 export type RealisticCameraMode = 'cinematic' | 'overview' | 'follow' | 'dock'
@@ -8,6 +9,7 @@ export type RealisticCameraMode = 'cinematic' | 'overview' | 'follow' | 'dock'
 interface RealisticOperationsHudProps {
   state: ReceivingSimulationState
   telemetry: KernelTelemetry
+  operations: ReceivingOperationsTelemetry
   events: KernelEvent[]
   timeScale: number
   paused: boolean
@@ -28,11 +30,29 @@ const CAMERA_LABELS: Record<RealisticCameraMode, string> = {
   dock: 'Doca',
 }
 
+const RESOURCE_LABELS: Record<ReceivingOperationsTelemetry['resource']['status'], string> = {
+  available: 'disponível',
+  reserved: 'reservada',
+  busy: 'em execução',
+}
+
 function eventLabel(event: KernelEvent): string {
   const payload = event.payload ?? {}
   if (event.type === 'pallet.picked') return `Coleta · ${String(payload.palletId ?? 'pallet')}`
   if (event.type === 'pallet.staged') {
     return `Staging · posição D${Number(payload.stagedSlot ?? 0) + 1}`
+  }
+  if (event.type === 'task.assigned') {
+    return `Tarefa atribuída · ${String(payload.palletId ?? 'pallet')}`
+  }
+  if (event.type === 'task.started') {
+    return `Tarefa em execução · ${String(payload.palletId ?? 'pallet')}`
+  }
+  if (event.type === 'task.completed') {
+    return `Tarefa concluída · ${String(payload.palletId ?? 'pallet')}`
+  }
+  if (event.type === 'reservation.created') {
+    return `Reserva · D${Number(payload.slot ?? 0) + 1}`
   }
   if (event.type === 'truck.receiving.completed') {
     return `Caminhão ${String(payload.completedBatch ?? '')} concluído`
@@ -64,6 +84,7 @@ function buttonStyle(active = false): CSSProperties {
 export function RealisticOperationsHud({
   state,
   telemetry,
+  operations,
   events,
   timeScale,
   paused,
@@ -79,6 +100,7 @@ export function RealisticOperationsHud({
   const carried = state.pallets.filter((pallet) => pallet.phase === 'carried').length
   const currentCompleted = Math.max(0, 6 - inTruck - carried)
   const currentProgress = Math.min(100, (currentCompleted / 6) * 100)
+  const activeTask = operations.activeTask
   const recentEvents = events
     .filter((event) => !event.type.startsWith('kernel.'))
     .slice(-5)
@@ -182,6 +204,50 @@ export function RealisticOperationsHud({
               <strong style={{ display: 'block', marginTop: 2, fontSize: 13 }}>{value}</strong>
             </div>
           ))}
+        </div>
+
+        <div
+          style={{
+            margin: '0 12px 10px',
+            padding: '9px 10px',
+            borderRadius: 11,
+            background: 'linear-gradient(135deg,rgba(8,145,178,.16),rgba(15,23,42,.72))',
+            border: '1px solid rgba(34,211,238,.2)',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 12,
+              fontSize: 8,
+              color: '#67e8f9',
+              letterSpacing: '.06em',
+            }}
+          >
+            <span>TAREFA OPERACIONAL</span>
+            <span>{operations.resource.id} · {RESOURCE_LABELS[operations.resource.status]}</span>
+          </div>
+          <strong
+            style={{
+              display: 'block',
+              marginTop: 6,
+              fontSize: 10,
+              color: activeTask ? '#f8fafc' : '#94a3b8',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {activeTask
+              ? `${activeTask.palletId} → D${String((activeTask.destinationSlot ?? 0) + 1).padStart(2, '0')}`
+              : 'Aguardando tarefa válida e recurso livre'}
+          </strong>
+          <div style={{ marginTop: 5, display: 'flex', gap: 12, fontSize: 8, color: '#94a3b8' }}>
+            <span>Fila: {operations.queued}</span>
+            <span>Executando: {operations.executing}</span>
+            <span>Tarefas concluídas: {operations.completed}</span>
+          </div>
         </div>
 
         <div style={{ padding: '0 12px 10px' }}>
@@ -289,7 +355,7 @@ export function RealisticOperationsHud({
           }}
         >
           <span style={{ fontSize: 9, color: state.fault ? '#fca5a5' : '#94a3b8' }}>
-            RX20: {state.forklift.phase} · {state.forklift.speed.toFixed(1)} m/s
+            RX20: {state.forklift.phase} · {state.forklift.speed.toFixed(1)} m/s · {RESOURCE_LABELS[operations.resource.status]}
           </span>
           <button type="button" onClick={onReset} style={buttonStyle(false)}>
             Reiniciar
