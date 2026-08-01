@@ -283,19 +283,22 @@ export class ReceivingKernelRuntime {
       maximumSubSteps: 12,
     })
 
-    let receivingSystem!: ReceivingKernelSystem
-    let operationsSystem!: ReceivingTaskResourceSystem
-
-    receivingSystem = new ReceivingKernelSystem(config, fixedDelta, () =>
+    const bridge: { current: ReceivingKernelSystem | null } = { current: null }
+    const readReceivingState = (): Readonly<ReceivingSimulationState> => {
+      if (!bridge.current) throw new Error('motor de recebimento ainda não inicializado')
+      return bridge.current.read()
+    }
+    const operationsSystem = new ReceivingTaskResourceSystem(
+      readReceivingState,
+      config,
+    )
+    const receivingSystem = new ReceivingKernelSystem(config, fixedDelta, () =>
       receivingExecutionPermit(
-        receivingSystem.read(),
+        readReceivingState(),
         operationsSystem.telemetry(),
       ),
     )
-    operationsSystem = new ReceivingTaskResourceSystem(
-      () => receivingSystem.read(),
-      config,
-    )
+    bridge.current = receivingSystem
 
     this.system = receivingSystem
     this.operationsSystem = operationsSystem
