@@ -16,6 +16,16 @@ function FloorZone({
   color,
   detail,
 }: FloorZoneProps) {
+  const halfWidth = size[0] / 2
+  const halfDepth = size[1] / 2
+  const outline: [number, number, number][] = [
+    [-halfWidth, 0.02, -halfDepth],
+    [halfWidth, 0.02, -halfDepth],
+    [halfWidth, 0.02, halfDepth],
+    [-halfWidth, 0.02, halfDepth],
+    [-halfWidth, 0.02, -halfDepth],
+  ]
+
   return (
     <group position={position}>
       <mesh rotation={[-Math.PI / 2, 0, 0]}>
@@ -28,10 +38,7 @@ function FloorZone({
           depthWrite={false}
         />
       </mesh>
-      <lineSegments position={[0, 0.015, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <edgesGeometry args={[new THREE.PlaneGeometry(size[0], size[1])]} />
-        <lineBasicMaterial color={color} transparent opacity={0.72} />
-      </lineSegments>
+      <Line points={outline} color={color} lineWidth={1.5} />
       <Text
         position={[0, 0.05, -0.35]}
         rotation={[-Math.PI / 2, 0, 0]}
@@ -103,13 +110,11 @@ export function RealisticOperationZones() {
           [-34, 0.08, -8],
           [-34, 0.08, 18],
         ]}
-        color="#f8fafc"
+        color="#94a3b8"
         lineWidth={2}
         dashed
         dashSize={0.8}
         gapSize={0.42}
-        transparent
-        opacity={0.42}
       />
 
       <Text
