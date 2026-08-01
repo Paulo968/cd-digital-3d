@@ -15,7 +15,8 @@ describe('ReceivingKernelRuntime', () => {
     }
 
     expect(runtime.read().completedTrucks).toBeGreaterThanOrEqual(1)
-    const eventTypes = new Set(runtime.events(1_000).map((event) => event.type))
+    const events = runtime.events(1_000)
+    const eventTypes = new Set(events.map((event) => event.type))
     expect(eventTypes.has('pallet.picked')).toBe(true)
     expect(eventTypes.has('pallet.staged')).toBe(true)
     expect(eventTypes.has('truck.receiving.completed')).toBe(true)
@@ -25,11 +26,51 @@ describe('ReceivingKernelRuntime', () => {
     expect(eventTypes.has('task.completed')).toBe(true)
     expect(eventTypes.has('reservation.created')).toBe(true)
 
+    const firstAssignment = events.find((event) => event.type === 'task.assigned')
+    const firstPickup = events.find((event) => event.type === 'pallet.picked')
+    expect(firstAssignment).toBeDefined()
+    expect(firstPickup).toBeDefined()
+    expect(firstAssignment!.sequence).toBeLessThan(firstPickup!.sequence)
+
     const operations = runtime.operations()
     expect(operations.completed).toBeGreaterThanOrEqual(6)
     expect(operations.tasks.some((task) => task.destinationSlot !== null)).toBe(true)
     expect(operations.resource.id).toBe('RX20-REC')
     expect(runtime.telemetry().tick).toBeGreaterThan(0)
+  })
+
+  it('bloqueia a RX20 quando não existe vaga reservável', () => {
+    const runtime = createReceivingKernelRuntime({
+      ...GROWING_RECEIVING_CONFIG,
+      id: 'receiving-without-staging-capacity',
+      stagingCapacity: 0,
+    })
+
+    for (let index = 0; index < 10_000; index += 1) {
+      runtime.step(1 / 30)
+    }
+
+    expect(runtime.read().truck.phase).toBe('docked')
+    expect(runtime.read().forklift.phase).toBe('parked')
+    expect(runtime.read().pallets.every((pallet) => pallet.phase === 'truck')).toBe(
+      true,
+    )
+    expect(runtime.read().fault).toBeNull()
+    expect(runtime.operations().activeTask).toBeNull()
+    expect(runtime.executionPermit()).toMatchObject({
+      allowed: false,
+      reason: 'no-assigned-task',
+    })
+    expect(
+      runtime.events(500).some(
+        (event) =>
+          event.type === 'receiving.execution.blocked' &&
+          event.payload.reason === 'no-assigned-task',
+      ),
+    ).toBe(true)
+    expect(runtime.events(500).some((event) => event.type === 'pallet.picked')).toBe(
+      false,
+    )
   })
 
   it('pausa e avança um único tick sem depender do React', () => {
@@ -62,6 +103,7 @@ describe('ReceivingKernelRuntime', () => {
       state: runtime.snapshot(),
       telemetry: runtime.telemetry(),
       operations: runtime.operations(),
+      permit: runtime.executionPermit(),
       events: runtime.events(120),
     }
 
@@ -73,6 +115,7 @@ describe('ReceivingKernelRuntime', () => {
       state: runtime.snapshot(),
       telemetry: runtime.telemetry(),
       operations: runtime.operations(),
+      permit: runtime.executionPermit(),
       events: runtime.events(120),
     }
 
