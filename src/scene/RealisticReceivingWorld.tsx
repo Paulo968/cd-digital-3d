@@ -10,6 +10,7 @@ import {
 } from 'react'
 import * as THREE from 'three'
 import type { KernelEvent, KernelTelemetry } from '../realistic/core/livingWorldKernel'
+import type { ReceivingOperationsTelemetry } from '../realistic/tasks/receivingTaskResourceSystem'
 import {
   EMPTY_WAREHOUSE_V3,
   GROWING_RECEIVING_CONFIG,
@@ -433,6 +434,9 @@ export function RealisticReceivingWorld({ compact }: { compact: boolean }) {
   const [telemetry, setTelemetry] = useState<KernelTelemetry>(() =>
     engineRef.current!.telemetry(),
   )
+  const [operations, setOperations] = useState<ReceivingOperationsTelemetry>(() =>
+    engineRef.current!.operations(),
+  )
   const [events, setEvents] = useState<KernelEvent[]>(() => engineRef.current!.events(16))
   const [timeScale, setTimeScaleState] = useState(DEFAULT_TIME_SCALE)
   const [paused, setPaused] = useState(false)
@@ -446,6 +450,7 @@ export function RealisticReceivingWorld({ compact }: { compact: boolean }) {
     if (!runtime) return
     setSnapshot(runtime.snapshot())
     setTelemetry(runtime.telemetry())
+    setOperations(runtime.operations())
     setEvents(runtime.events(16))
   }, [])
 
@@ -588,6 +593,7 @@ export function RealisticReceivingWorld({ compact }: { compact: boolean }) {
       <RealisticOperationsHud
         state={snapshot}
         telemetry={telemetry}
+        operations={operations}
         events={events}
         timeScale={timeScale}
         paused={paused}
