@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { ImportPanel } from '../features/ImportPanel'
 import { LayoutBuilderPanel } from '../features/LayoutBuilderPanel'
 import { MovementPanel } from '../features/MovementPanel'
@@ -15,7 +15,6 @@ import { SimulationPanel } from '../features/SimulationPanel'
 import { TraceabilityPanel } from '../features/TraceabilityPanel'
 import type { RoutePlan } from '../domain/routePlanning'
 import { generateWarehouseSkeleton } from '../domain/warehouse'
-import { WarehouseScene } from '../scene/WarehouseScene'
 import {
   useDigitalTwinStore,
   type ActivePanel,
@@ -29,6 +28,13 @@ import { useRealisticExperienceStore } from '../store/realisticExperienceStore'
 import './app.css'
 import './panel-toggle.css'
 import './unified-shell.css'
+import './scene-loading.css'
+
+const WarehouseScene = lazy(() =>
+  import('../scene/WarehouseScene').then(({ WarehouseScene: Scene }) => ({
+    default: Scene,
+  })),
+)
 
 const PANEL_LABEL: Record<ActivePanel, string> = {
   overview: 'Visão geral',
@@ -186,17 +192,19 @@ export default function App() {
         className="scene-layer"
         aria-label="Gêmeo digital 3D do centro de distribuição"
       >
-        <WarehouseScene
-          layout={state.layout}
-          locations={state.locations}
-          selectedAddress={state.selectedAddress}
-          visibleStatuses={state.visibleStatuses}
-          mode={state.renderMode}
-          routePlan={sceneRoutePlan}
-          routeRunToken={state.routeRunToken}
-          cameraResetToken={state.cameraResetToken}
-          onSelect={state.selectAddress}
-        />
+        <Suspense fallback={<div className="scene-loading">Carregando motor 3D…</div>}>
+          <WarehouseScene
+            layout={state.layout}
+            locations={state.locations}
+            selectedAddress={state.selectedAddress}
+            visibleStatuses={state.visibleStatuses}
+            mode={state.renderMode}
+            routePlan={sceneRoutePlan}
+            routeRunToken={state.routeRunToken}
+            cameraResetToken={state.cameraResetToken}
+            onSelect={state.selectAddress}
+          />
+        </Suspense>
       </section>
 
       <button
