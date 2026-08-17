@@ -1,6 +1,8 @@
 import { Billboard, Line, OrbitControls, Text } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import {
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -30,7 +32,6 @@ import {
   EMPTY_TRANSFER_VISUAL,
   type PalletTransferVisualState,
 } from './palletTransferVisual'
-import { RealisticEnvironment } from './RealisticEnvironment'
 import {
   approachSpeed,
   placeVehicle,
@@ -39,6 +40,12 @@ import {
   routeLengths,
   sampleRoute,
 } from './vehicleMotion'
+
+const RealisticEnvironment = lazy(() =>
+  import('./RealisticEnvironment').then(({ RealisticEnvironment: World }) => ({
+    default: World,
+  })),
+)
 
 const STATUS_COLOR: Record<SlotStatus, string> = {
   occupied: '#38bdf8',
@@ -754,12 +761,14 @@ export function WarehouseScene({
 
       <FloorAndZones layout={layout} mode={mode} />
       {mode === 'realistic' && (
-        <RealisticEnvironment
-          layout={layout}
-          locations={locations}
-          animated={ambientAnimation}
-          compact={profile.compact}
-        />
+        <Suspense fallback={null}>
+          <RealisticEnvironment
+            layout={layout}
+            locations={locations}
+            animated={ambientAnimation}
+            compact={profile.compact}
+          />
+        </Suspense>
       )}
       <RackInstances layout={layout} mode={mode} />
       <SlotInstances
