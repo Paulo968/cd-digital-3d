@@ -13,6 +13,10 @@ import {
 } from '../domain/warehouseGeometry'
 import type { WarehouseLocation } from '../domain/warehouse'
 import { ForkliftModel } from './ForkliftModel'
+import type {
+  PalletTransferPhase,
+  PalletTransferVisualState,
+} from './palletTransferVisual'
 import {
   angleTowards,
   approachSpeed,
@@ -23,26 +27,6 @@ import {
   routeLengths,
   sampleRoute,
 } from './vehicleMotion'
-
-export type PalletTransferPhase =
-  | 'idle'
-  | 'going-to-source'
-  | 'collecting'
-  | 'transporting'
-  | 'depositing'
-  | 'completed'
-
-export interface PalletTransferVisualState {
-  hiddenSource: boolean
-  cargoAtDestination: boolean
-  phase: PalletTransferPhase
-}
-
-export const EMPTY_TRANSFER_VISUAL: PalletTransferVisualState = {
-  hiddenSource: false,
-  cargoAtDestination: false,
-  phase: 'idle',
-}
 
 const APPROACH_DISTANCE = 0.9
 const EMPTY_TRAVEL_SPEED = 4.2
