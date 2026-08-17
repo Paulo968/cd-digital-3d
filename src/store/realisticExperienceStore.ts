@@ -10,6 +10,7 @@ export type RealisticCameraMode =
   | 'overview'
   | 'follow'
   | 'dock'
+  | 'free'
 
 interface RealisticController {
   setTimeScale: (scale: number) => void
