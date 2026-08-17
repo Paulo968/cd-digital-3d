@@ -441,6 +441,7 @@ function effectiveCameraMode(
   selected: RealisticCameraMode,
   state: ReceivingSimulationState,
 ): Exclude<RealisticCameraMode, 'cinematic'> {
+  if (selected === 'free') return 'free'
   if (selected !== 'cinematic') return selected
   if (state.truck.phase === 'arriving' || state.truck.phase === 'departing') {
     return 'dock'
@@ -487,6 +488,10 @@ export function RealisticReceivingWorld({
 
   const { camera, invalidate } = useThree()
   const get = useThree((state) => state.get)
+
+  useEffect(() => {
+    invalidate()
+  }, [cameraMode, invalidate])
 
   const refreshPresentation = useCallback(() => {
     const runtime = engineRef.current
@@ -563,6 +568,7 @@ export function RealisticReceivingWorld({
     if (!runtime) return
     runtime.step(delta)
     const state = runtime.read()
+    const runtimeTelemetry = runtime.telemetry()
 
     if (forkliftRef.current) {
       forkliftRef.current.position.set(
@@ -584,8 +590,13 @@ export function RealisticReceivingWorld({
     const worldForkliftZ = state.forklift.position.z + scenario.offset.z
     const dockWorldX = scenario.offset.x
     const dockWorldZ = scenario.inboundDockZ
+    let cameraSettling = false
 
-    if (activeMode === 'follow') {
+    if (activeMode === 'free') {
+      // OrbitControls owns the camera in this mode. The simulation must not
+      // overwrite a manual orbit, pan or zoom on the next frame.
+      cameraSettling = false
+    } else if (activeMode === 'follow') {
       desiredCamera.set(
         worldForkliftX + (compact ? 8 : 11),
         compact ? 7 : 9,
@@ -608,18 +619,26 @@ export function RealisticReceivingWorld({
       desiredTarget.set(0, 2.5, 0)
     }
 
-    const smoothing = 1 - Math.exp(-delta * 2.8)
-    camera.position.lerp(desiredCamera, smoothing)
-    const controls = get().controls as CameraControls | undefined
-    controls?.target?.lerp(desiredTarget, smoothing)
-    controls?.update?.()
+    if (activeMode !== 'free') {
+      const smoothing = 1 - Math.exp(-delta * 2.8)
+      camera.position.lerp(desiredCamera, smoothing)
+      const controls = get().controls as CameraControls | undefined
+      controls?.target?.lerp(desiredTarget, smoothing)
+      controls?.update?.()
+      cameraSettling =
+        camera.position.distanceTo(desiredCamera) > 0.06 ||
+        Boolean(
+          controls?.target &&
+            controls.target.distanceTo(desiredTarget) > 0.06,
+        )
+    }
 
     hudAccumulatorRef.current += delta
     if (hudAccumulatorRef.current >= HUD_REFRESH_SECONDS) {
       hudAccumulatorRef.current = 0
       refreshPresentation()
     }
-    invalidate()
+    if (!runtimeTelemetry.paused || cameraSettling) invalidate()
   })
 
   const carried = snapshot.pallets.find(
