@@ -6,6 +6,7 @@ import {
   TRAVEL_FORK_HEIGHT,
 } from '../domain/warehouseGeometry'
 import { setOperationalVehicleRuntimePose } from '../store/operationalVehicleRuntime'
+import { isDockRxColor } from './forkliftAppearance'
 
 interface ForkliftModelProps {
   carriageRef?: MutableRefObject<THREE.Group | null>
@@ -22,14 +23,6 @@ interface ForkliftModelProps {
 const WORLD_POSITION = new THREE.Vector3()
 const WORLD_QUATERNION = new THREE.Quaternion()
 const WORLD_EULER = new THREE.Euler(0, 0, 0, 'YXZ')
-
-const RX_RECEIVING_COLOR = '#16a34a'
-const RX_SHIPPING_COLOR = '#0284c7'
-
-export function isDockRxColor(accent: string): boolean {
-  const normalized = accent.toLowerCase()
-  return normalized === RX_RECEIVING_COLOR || normalized === RX_SHIPPING_COLOR
-}
 
 function Wheel({
   x,

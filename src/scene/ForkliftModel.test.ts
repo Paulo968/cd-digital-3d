@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isDockRxColor } from './ForkliftModel'
+import { isDockRxColor } from './forkliftAppearance'
 
 describe('modelo RX 20x20 das docas', () => {
   it('identifica a RX de recebimento e a RX de expedição', () => {

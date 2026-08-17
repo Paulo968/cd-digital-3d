@@ -4,11 +4,13 @@ import { LayoutBuilderPanel } from '../features/LayoutBuilderPanel'
 import { MovementPanel } from '../features/MovementPanel'
 import { OperationalOverviewPanel } from '../features/OperationalOverviewPanel'
 import {
+  RealisticControlPanel,
+} from '../features/RealisticControlPanel'
+import {
   REALISTIC_PANEL_ICON,
   REALISTIC_PANEL_LABEL,
-  RealisticControlPanel,
   type RealisticPanel,
-} from '../features/RealisticControlPanel'
+} from '../features/realisticPanels'
 import { SimulationPanel } from '../features/SimulationPanel'
 import { TraceabilityPanel } from '../features/TraceabilityPanel'
 import type { RoutePlan } from '../domain/routePlanning'
