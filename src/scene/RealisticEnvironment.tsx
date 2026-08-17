@@ -1,27 +1,15 @@
 import type { WarehouseLayout } from '../domain/layout'
-import type { WarehouseLocation } from '../domain/warehouse'
 import { RealisticReceivingWorld } from './RealisticReceivingWorld'
-import { RealisticSceneIsolation } from './RealisticSceneIsolation'
 
 interface RealisticEnvironmentProps {
   layout: WarehouseLayout
-  locations: WarehouseLocation[]
-  animated: boolean
   compact: boolean
 }
 
 /**
- * O modo realista usa a mesma planta, ruas, posições e porta-paletes do modo
- * operacional. Esta camada acrescenta somente infraestrutura física, docas,
- * staging, veículos, iluminação e a operação simulada ao redor do layout.
+ * O modo realista tem uma árvore visual própria. Assim, a cena operacional não
+ * é montada e escondida por baixo dela, reduzindo memória e trabalho de render.
  */
-export function RealisticEnvironment({
-  layout,
-  compact,
-}: RealisticEnvironmentProps) {
-  return (
-    <RealisticSceneIsolation>
-      <RealisticReceivingWorld layout={layout} compact={compact} />
-    </RealisticSceneIsolation>
-  )
+export function RealisticEnvironment({ layout, compact }: RealisticEnvironmentProps) {
+  return <RealisticReceivingWorld layout={layout} compact={compact} />
 }
