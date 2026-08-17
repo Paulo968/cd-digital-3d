@@ -628,7 +628,7 @@ export function LiveFleetOperation({
   const [assignments, setAssignments] = useState<VehicleAssignmentMap>(() =>
     Object.fromEntries(plan.vehicles.map((vehicle) => [vehicle.id, null])),
   )
-  const [brain, setBrain] = useState<WarehouseBrainState>(() =>
+  const brainRef = useRef<WarehouseBrainState>(
     createWarehouseBrainState(Date.now()),
   )
   const [brainNow, setBrainNow] = useState(() => Date.now())
@@ -660,7 +660,7 @@ export function LiveFleetOperation({
     setAssignments(
       Object.fromEntries(plan.vehicles.map((vehicle) => [vehicle.id, null])),
     )
-    setBrain(createWarehouseBrainState(now))
+    brainRef.current = createWarehouseBrainState(now)
     setBrainNow(now)
   }, [plan])
 
@@ -673,7 +673,7 @@ export function LiveFleetOperation({
   }, [compact])
 
   useEffect(() => {
-    const decision = decideWarehouseBrain(brain, {
+    const decision = decideWarehouseBrain(brainRef.current, {
       now: brainNow,
       compact,
       layout,
@@ -685,7 +685,7 @@ export function LiveFleetOperation({
       statuses,
     })
     const action = decision.action
-    setBrain(decision.state)
+    brainRef.current = decision.state
 
     if (action.type === 'receive-pallet') {
       setPalletStops((current) => ({
