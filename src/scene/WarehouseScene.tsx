@@ -719,7 +719,7 @@ export function WarehouseScene({
     <Canvas
       frameloop="demand"
       shadows={realisticShadows}
-      dpr={[1, profile.compact ? 1.1 : 1.45]}
+      dpr={[1, profile.compact ? 1.05 : 1.2]}
       camera={{
         position: [DEFAULT_CAMERA.x, DEFAULT_CAMERA.y, DEFAULT_CAMERA.z],
         fov: 46,
@@ -748,8 +748,8 @@ export function WarehouseScene({
         position={[24, 32, 18]}
         intensity={mode === 'operational' ? 1.4 : 2.05}
         castShadow={realisticShadows}
-        shadow-mapSize-width={profile.compact ? 1024 : 2048}
-        shadow-mapSize-height={profile.compact ? 1024 : 2048}
+        shadow-mapSize-width={1024}
+        shadow-mapSize-height={1024}
       />
 
       <FloorAndZones layout={layout} mode={mode} />
