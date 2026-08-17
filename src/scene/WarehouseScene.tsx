@@ -23,11 +23,13 @@ import type { RenderMode } from '../store/digitalTwinStore'
 import { usePalletTransferSimulationStore } from '../store/palletTransferSimulationStore'
 import { ForkliftModel } from './ForkliftModel'
 import {
-  EMPTY_TRANSFER_VISUAL,
   PalletTransferVehicle,
   SimulatedDestinationLoad,
-  type PalletTransferVisualState,
 } from './PalletTransferVehicle'
+import {
+  EMPTY_TRANSFER_VISUAL,
+  type PalletTransferVisualState,
+} from './palletTransferVisual'
 import { RealisticEnvironment } from './RealisticEnvironment'
 import {
   approachSpeed,
