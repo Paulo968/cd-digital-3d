@@ -712,12 +712,6 @@ export function WarehouseScene({
       (point) => [point.x, 0.11, point.z] as [number, number, number],
     ) ?? []
   const realisticShadows = mode === 'realistic' && !profile.compact
-  const ambientAnimation =
-    mode === 'realistic' &&
-    !profile.reducedMotion &&
-    !transfer &&
-    !routePlan
-
   useEffect(() => {
     if (!transfer) setTransferVisual(EMPTY_TRANSFER_VISUAL)
   }, [transfer])
@@ -759,80 +753,82 @@ export function WarehouseScene({
         shadow-mapSize-height={1024}
       />
 
-      <FloorAndZones layout={layout} mode={mode} />
       {mode === 'realistic' && (
         <Suspense fallback={null}>
           <RealisticEnvironment
             layout={layout}
-            locations={locations}
-            animated={ambientAnimation}
             compact={profile.compact}
           />
         </Suspense>
       )}
-      <RackInstances layout={layout} mode={mode} />
-      <SlotInstances
-        layout={layout}
-        locations={visibleLocations}
-        selectedAddress={selectedAddress}
-        hiddenAddress={
-          transferVisual.hiddenSource ? transfer?.sourceAddress : undefined
-        }
-        reducedMotion={profile.reducedMotion}
-        onSelect={(address) => onSelect(address)}
-      />
-      <AisleLabels layout={layout} />
-
-      {routeLinePoints.length > 1 && (
-        <Line
-          points={routeLinePoints}
-          color="#2563eb"
-          lineWidth={3}
-          dashed
-          dashSize={0.55}
-          gapSize={0.28}
-        />
-      )}
-      {emptyTransferLine.length > 1 && (
-        <Line
-          points={emptyTransferLine}
-          color="#64748b"
-          lineWidth={2}
-          dashed
-          dashSize={0.35}
-          gapSize={0.24}
-        />
-      )}
-      {loadedTransferLine.length > 1 && (
-        <Line points={loadedTransferLine} color="#0284c7" lineWidth={3.5} />
-      )}
-
-      {!transfer && (
-        <RouteForklift
-          plan={routePlan}
-          runToken={routeRunToken}
-          compact={profile.compact}
-        />
-      )}
-      {transfer && (
-        <PalletTransferVehicle
-          simulation={transfer}
-          runToken={transferRunToken}
-          source={source}
-          destination={destination}
-          onVisual={setTransferVisual}
-          onComplete={completeTransfer}
-        />
-      )}
-      {transfer &&
-        destination &&
-        transferVisual.cargoAtDestination && (
-          <SimulatedDestinationLoad
+      {mode === 'operational' && (
+        <>
+          <FloorAndZones layout={layout} mode={mode} />
+          <RackInstances layout={layout} mode={mode} />
+          <SlotInstances
             layout={layout}
-            location={destination}
-            sku={transfer.sku}
+            locations={visibleLocations}
+            selectedAddress={selectedAddress}
+            hiddenAddress={
+              transferVisual.hiddenSource ? transfer?.sourceAddress : undefined
+            }
+            reducedMotion={profile.reducedMotion}
+            onSelect={(address) => onSelect(address)}
           />
-        )}
+          <AisleLabels layout={layout} />
+
+          {routeLinePoints.length > 1 && (
+            <Line
+              points={routeLinePoints}
+              color="#2563eb"
+              lineWidth={3}
+              dashed
+              dashSize={0.55}
+              gapSize={0.28}
+            />
+          )}
+          {emptyTransferLine.length > 1 && (
+            <Line
+              points={emptyTransferLine}
+              color="#64748b"
+              lineWidth={2}
+              dashed
+              dashSize={0.35}
+              gapSize={0.24}
+            />
+          )}
+          {loadedTransferLine.length > 1 && (
+            <Line points={loadedTransferLine} color="#0284c7" lineWidth={3.5} />
+          )}
+
+          {!transfer && (
+            <RouteForklift
+              plan={routePlan}
+              runToken={routeRunToken}
+              compact={profile.compact}
+            />
+          )}
+          {transfer && (
+            <PalletTransferVehicle
+              simulation={transfer}
+              runToken={transferRunToken}
+              source={source}
+              destination={destination}
+              onVisual={setTransferVisual}
+              onComplete={completeTransfer}
+            />
+          )}
+          {transfer &&
+            destination &&
+            transferVisual.cargoAtDestination && (
+              <SimulatedDestinationLoad
+                layout={layout}
+                location={destination}
+                sku={transfer.sku}
+              />
+            )}
+        </>
+      )}
       <CameraRig
         layout={layout}
         selected={selected}
