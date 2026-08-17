@@ -12,6 +12,7 @@ const CAMERA_LABELS: Record<RealisticCameraMode, string> = {
   overview: 'Visão geral',
   follow: 'Seguir RX20',
   dock: 'Doca inbound',
+  free: 'Câmera livre',
 }
 
 function eventLabel(event: KernelEvent): string {
@@ -296,7 +297,9 @@ function CameraPanel() {
                   ? 'Mostra doca, staging e estrutura do armazém.'
                   : mode === 'follow'
                     ? 'Acompanha a RX20 durante o ciclo.'
-                    : 'Foco no caminhão e na niveladora.'}
+                    : mode === 'dock'
+                      ? 'Foco no caminhão e na niveladora.'
+                      : 'Gire, mova e aproxime livremente a cena.'}
             </span>
           </button>
         ))}
