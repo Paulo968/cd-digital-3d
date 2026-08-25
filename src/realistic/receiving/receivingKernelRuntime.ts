@@ -8,6 +8,18 @@ import {
   type LivingWorldKernelSnapshot,
 } from '../core/livingWorldKernel'
 import {
+  WarehousePutawayFlowSystem,
+  type WarehousePutawayTelemetry,
+} from '../putaway/warehousePutawayFlowSystem'
+import {
+  receivingExecutionPermit,
+  type ReceivingExecutionPermit,
+} from '../tasks/receivingExecutionAuthority'
+import {
+  ReceivingTaskResourceSystem,
+  type ReceivingOperationsTelemetry,
+} from '../tasks/receivingTaskResourceSystem'
+import {
   ReceivingSimulation,
   type ReceivingPallet,
   type ReceivingScenarioConfig,
@@ -15,8 +27,9 @@ import {
 } from '../../realistic-v2/receivingSimulation'
 
 interface ReceivingSystemSnapshot {
-  version: 1
+  version: 2
   stepsSinceReset: number
+  lastBlockedReason: string | null
   state: ReceivingSimulationState
 }
 
@@ -35,10 +48,12 @@ function assertReceivingSnapshot(value: unknown): ReceivingSystemSnapshot {
   }
   const candidate = value as Partial<ReceivingSystemSnapshot>
   if (
-    candidate.version !== 1 ||
+    candidate.version !== 2 ||
     !Number.isInteger(candidate.stepsSinceReset) ||
     (candidate.stepsSinceReset ?? -1) < 0 ||
-    !candidate.state
+    !candidate.state ||
+    (candidate.lastBlockedReason !== null &&
+      typeof candidate.lastBlockedReason !== 'string')
   ) {
     throw new Error('snapshot do recebimento incompatível')
   }
@@ -58,16 +73,49 @@ class ReceivingKernelSystem implements KernelSystem {
   private engine: ReceivingSimulation
   private previous: ReceivingSimulationState
   private stepsSinceReset = 0
+  private lastBlockedReason: string | null = null
 
   constructor(
     private readonly config: ReceivingScenarioConfig,
     private readonly fixedDelta: number,
+    private readonly executionPermit: () => ReceivingExecutionPermit,
   ) {
     this.engine = new ReceivingSimulation(config)
     this.previous = this.engine.snapshot()
   }
 
   step(context: KernelStepContext): void {
+    const permit = this.executionPermit()
+    if (!permit.allowed) {
+      if (this.lastBlockedReason !== permit.reason) {
+        context.emit({
+          type: 'receiving.execution.blocked',
+          payload: {
+            reason: permit.reason,
+            taskId: permit.taskId,
+            palletId: permit.palletId,
+            destinationSlot: permit.destinationSlot,
+          },
+        })
+      }
+      this.lastBlockedReason = permit.reason
+      return
+    }
+
+    if (this.lastBlockedReason) {
+      context.emit({
+        type: 'receiving.execution.resumed',
+        payload: {
+          previousReason: this.lastBlockedReason,
+          permitReason: permit.reason,
+          taskId: permit.taskId,
+          palletId: permit.palletId,
+          destinationSlot: permit.destinationSlot,
+        },
+      })
+      this.lastBlockedReason = null
+    }
+
     this.engine.step(context.delta)
     this.stepsSinceReset += 1
     const current = this.engine.snapshot()
@@ -80,6 +128,7 @@ class ReceivingKernelSystem implements KernelSystem {
     this.engine = new ReceivingSimulation(this.config)
     this.previous = this.engine.snapshot()
     this.stepsSinceReset = 0
+    this.lastBlockedReason = null
     context.emit({
       type: 'receiving.reset',
       payload: { scenarioId: this.config.id },
@@ -96,8 +145,9 @@ class ReceivingKernelSystem implements KernelSystem {
 
   snapshot(): ReceivingSystemSnapshot {
     return {
-      version: 1,
+      version: 2,
       stepsSinceReset: this.stepsSinceReset,
+      lastBlockedReason: this.lastBlockedReason,
       state: this.engine.snapshot(),
     }
   }
@@ -117,6 +167,7 @@ class ReceivingKernelSystem implements KernelSystem {
     this.engine = rebuilt
     this.previous = rebuiltState
     this.stepsSinceReset = snapshot.stepsSinceReset
+    this.lastBlockedReason = snapshot.lastBlockedReason
   }
 
   private publishTransitions(
@@ -223,6 +274,8 @@ export class ReceivingKernelRuntime {
   readonly kernel: LivingWorldKernel
 
   private readonly system: ReceivingKernelSystem
+  private readonly operationsSystem: ReceivingTaskResourceSystem
+  private readonly putawaySystem: WarehousePutawayFlowSystem
 
   constructor(
     config: ReceivingScenarioConfig,
@@ -234,7 +287,34 @@ export class ReceivingKernelRuntime {
       eventCapacity: options.eventCapacity ?? 1_500,
       maximumSubSteps: 12,
     })
-    this.system = new ReceivingKernelSystem(config, fixedDelta)
+
+    const bridge: { current: ReceivingKernelSystem | null } = { current: null }
+    const readReceivingState = (): Readonly<ReceivingSimulationState> => {
+      if (!bridge.current) throw new Error('motor de recebimento ainda não inicializado')
+      return bridge.current.read()
+    }
+    const operationsSystem = new ReceivingTaskResourceSystem(
+      readReceivingState,
+      config,
+    )
+    const putawaySystem = new WarehousePutawayFlowSystem(() =>
+      operationsSystem.telemetry(),
+    )
+    const receivingSystem = new ReceivingKernelSystem(config, fixedDelta, () =>
+      receivingExecutionPermit(
+        readReceivingState(),
+        operationsSystem.telemetry(),
+      ),
+    )
+    bridge.current = receivingSystem
+
+    this.system = receivingSystem
+    this.operationsSystem = operationsSystem
+    this.putawaySystem = putawaySystem
+
+    // Operação e putaway decidem primeiro; o motor avança depois da licença.
+    this.kernel.registerSystem(this.operationsSystem)
+    this.kernel.registerSystem(this.putawaySystem)
     this.kernel.registerSystem(this.system)
   }
 
@@ -261,7 +341,6 @@ export class ReceivingKernelRuntime {
   reset(): void {
     this.kernel.enqueueCommand({
       type: 'receiving.reset',
-      target: this.system.id,
     })
     this.kernel.stepOnce()
   }
@@ -284,6 +363,18 @@ export class ReceivingKernelRuntime {
 
   telemetry(): KernelTelemetry {
     return this.kernel.telemetry()
+  }
+
+  operations(): ReceivingOperationsTelemetry {
+    return this.operationsSystem.telemetry()
+  }
+
+  putaway(): WarehousePutawayTelemetry {
+    return this.putawaySystem.telemetry()
+  }
+
+  executionPermit(): ReceivingExecutionPermit {
+    return receivingExecutionPermit(this.system.read(), this.operationsSystem.telemetry())
   }
 
   events(limit = 50): KernelEvent[] {
